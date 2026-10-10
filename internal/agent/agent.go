@@ -111,6 +111,9 @@ type Config struct {
 	Perception screen.Perception
 	Summary    summary.Format
 	TodayFrom  string // policy.today_source: app o server
+	// Dialogs es policy.dialogs: revision de apertura (huella y dialogos) antes
+	// de orientar. Deshabilitado = sin llamada extra (comportamiento de la epica 6).
+	Dialogs DialogPolicy
 }
 
 // Outcome es el resultado de una tarea.
@@ -133,6 +136,9 @@ type Agent struct {
 	// AppHints devuelve el id y las pistas del perfil de app que coincide con
 	// el texto visible ("" si no hay perfil o estan apagados).
 	AppHints func(screenText string) (id, hints string)
+	// AppResolve, si no es nil, reemplaza a AppHints: resuelve el perfil con la
+	// huella de la app (texto y version visible) y reporta un cambio de app.
+	AppResolve func(screenText string) AppMatch
 	// ReportMargin es cuanto antes del deadline de ctx el loop deja de actuar
 	// para reportar con lo que tiene (por defecto 6 s).
 	ReportMargin time.Duration
@@ -149,6 +155,7 @@ type Agent struct {
 	recent       []string // ultimas acciones de pantalla
 	deadline     time.Time
 	parseErrs    int
+	fingerprint  string // titulo y version leidos en la revision de apertura
 }
 
 func (a *Agent) init() {
@@ -206,6 +213,21 @@ func (a *Agent) Run(ctx context.Context, instruction string) Outcome {
 
 	// 2. Orientar: fecha de la app, titulo, perfil de app.
 	st.enter(PhaseOrient)
+	if a.Cfg.Dialogs.Enabled {
+		fp, failure, err := a.openingCheck(ctx)
+		if err != nil {
+			return a.failErr(ctx, "no se pudo revisar la pantalla inicial", err)
+		}
+		if failure != nil {
+			return a.fail(ctx, failure.reason, failure.ids)
+		}
+		a.fingerprint = fp
+		if a.view == nil {
+			if _, err := a.stableCapture(ctx); err != nil {
+				return a.failErr(ctx, "no se pudo capturar la pantalla", err)
+			}
+		}
+	}
 	if err := a.orient(ctx); err != nil {
 		return a.failErr(ctx, "no se pudo leer la pantalla inicial", err)
 	}
@@ -561,8 +583,20 @@ func (a *Agent) orient(ctx context.Context) error {
 			a.addNote(fmt.Sprintf("%q = %s", expr, r))
 		}
 	}
-	screenText := strings.Join(append([]string{o.Titulo, o.Texto}, o.Menus...), "\n")
-	if a.AppHints != nil {
+	screenText := strings.Join(append([]string{a.fingerprint, o.Titulo, o.Texto}, o.Menus...), "\n")
+	var change string
+	switch {
+	case a.AppResolve != nil:
+		m := a.AppResolve(screenText)
+		if m.Change != "" {
+			// Huella distinta del perfil: sus pistas no se usan (modo generico).
+			change = m.Change
+			a.Log.Warn(change, "fase", string(PhaseOrient), "perfil_descartado", m.ID)
+			a.addNote(change + ": las pistas del perfil conocido no aplican; modo generico, aprende la app mirando la pantalla")
+		} else if m.ID != "" {
+			st.AppProfile, a.hints = m.ID, m.Hints
+		}
+	case a.AppHints != nil:
 		if id, h := a.AppHints(screenText); id != "" {
 			st.AppProfile, a.hints = id, h
 		}
@@ -570,6 +604,9 @@ func (a *Agent) orient(ctx context.Context) error {
 	reason := note
 	if st.AppProfile != "" {
 		reason += "; perfil de app: " + st.AppProfile
+	}
+	if change != "" {
+		reason += "; " + change + " (perfil descartado, modo generico)"
 	}
 	a.traceStep(trace.Step{Phase: string(PhaseOrient), Action: "orientar: " + truncate(o.Titulo, 80), Reason: reason}, u, a.Now().Sub(start))
 	a.logInfo("orientacion", "hoy", st.Today.Format("2006-01-02"), "fuente", st.TodayFrom, "perfil_app", st.AppProfile)

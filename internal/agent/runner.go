@@ -64,6 +64,10 @@ func (r *Runner) Run(ctx context.Context, job *tasks.Job) tasks.Result {
 	if err != nil {
 		return failed("Error de configuración del agente; la tarea no se inició.")
 	}
+	dialogs, err := DialogPolicyFromConfig(cfg)
+	if err != nil {
+		return failed("Error de configuración del agente; la tarea no se inició.")
+	}
 	var todaySrc string
 	if v, ok := cfg.Lookup("policy.today_source"); ok {
 		todaySrc, _ = v.(string)
@@ -87,8 +91,10 @@ func (r *Runner) Run(ctx context.Context, job *tasks.Job) tasks.Result {
 			Perception: ds.Perception(),
 			Summary:    sumFmt,
 			TodayFrom:  todaySrc,
+			Dialogs:    dialogs,
 		},
-		AppHints: r.appHints,
+		AppHints:   r.appHints,
+		AppResolve: r.appResolve,
 	}
 	if job.Trace != nil {
 		a.Trace = job.Trace
@@ -123,6 +129,22 @@ func (r *Runner) appHints(screenText string) (string, string) {
 		return "", ""
 	}
 	return layer.ID, RenderHints(layer.Tree)
+}
+
+// appResolve resuelve el perfil con la huella de la app (texto y version
+// visible). Si la version no coincide, no hay pistas y Change lo explica.
+func (r *Runner) appResolve(screenText string) AppMatch {
+	if r.Loader == nil {
+		return AppMatch{}
+	}
+	res, err := r.Loader.ResolveAppFingerprint(screenText)
+	if err != nil {
+		return AppMatch{}
+	}
+	if !res.OK {
+		return AppMatch{ID: res.Layer.ID, Change: res.Change}
+	}
+	return AppMatch{ID: res.Layer.ID, Hints: RenderHints(res.Layer.Tree)}
 }
 
 // RenderHints resume un perfil de app (apps/*.yaml) en texto para el prompt.
