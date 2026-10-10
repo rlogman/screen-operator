@@ -68,11 +68,22 @@ models:
   # Medido 2026-10-10 con una captura 1280x800 (TestE6_1_S5, OpenRouter):
   #   openai/gpt-4o-mini        36.884 tokens de entrada, US$ 0,0056 por captura
   #   anthropic/claude-haiku-5.5 1.412 tokens de entrada, US$ 0,00019 por captura
+  #   google/gemini-3.8-flash    1.131 tokens de entrada, US$ 0,0012 por captura (0.75/3.75)
+  #   anthropic/claude-sonnet-5.5 1.412 tokens de entrada, US$ 0,0036 por captura (2/10)
   # gpt-4o-mini cuenta la imagen ~26 veces mas cara: 40 pasos romperian el techo de US$ 0,04.
   # verifier: extraccion de filas y relectura (salida mas larga).
   roles:
     actor: { model: anthropic/claude-haiku-5.5, temperature: 0, max_tokens: 1000, reasoning_effort: none, price_in_usd_per_mtok: 0.10, price_out_usd_per_mtok: 0.50 }
     verifier: { model: anthropic/claude-haiku-5.5, temperature: 0, max_tokens: 4000, reasoning_effort: none, price_in_usd_per_mtok: 0.10, price_out_usd_per_mtok: 0.50 }
+    # Epica 8.2 (docs/model-selection.md): Sonnet 5.5 decide solo los pasos trabados.
+    # Sonnet y Gemini 3.8 Flash rechazan reasoning_effort none (HTTP 400); minimal da 0 tokens de razonamiento.
+    escalation: { model: anthropic/claude-sonnet-5.5, temperature: 0, max_tokens: 1000, reasoning_effort: minimal, price_in_usd_per_mtok: 2.00, price_out_usd_per_mtok: 10.00 }
+  # Escalamiento: disparadores, N pasos en la misma fase, maximo de pasos escalados y tope de costo por tarea.
+  escalation:
+    triggers: [sin_efecto, cierre_rechazado, sin_avance]
+    stall_steps: 6
+    max_steps: 4
+    max_task_cost_usd: 0.05
 
 policy:
   today_source: app

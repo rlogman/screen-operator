@@ -314,7 +314,8 @@
             "enum": [
               "actor",
               "verifier",
-              "grounder"
+              "grounder",
+              "escalation"
             ]
           }
         },
@@ -328,6 +329,39 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 5
+        },
+        "escalation": {
+          "description": "Escalamiento a models.roles.escalation cuando el loop se traba (epica 8). Sin ese rol no tiene efecto.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "triggers": {
+              "description": "Disparadores: sin_efecto (accion repetida sin efecto o sin avanzar), cierre_rechazado, sin_avance (stall_steps pasos en la misma fase). Vacio = todos.",
+              "type": "array",
+              "items": {
+                "enum": [
+                  "sin_efecto",
+                  "cierre_rechazado",
+                  "sin_avance"
+                ]
+              }
+            },
+            "stall_steps": {
+              "description": "N de sin_avance.",
+              "type": "integer",
+              "minimum": 1
+            },
+            "max_steps": {
+              "description": "Maximo de decisiones escaladas por tarea.",
+              "type": "integer",
+              "minimum": 0
+            },
+            "max_task_cost_usd": {
+              "description": "No escalar si la tarea ya gasto esto (0 = sin tope).",
+              "type": "number",
+              "minimum": 0
+            }
+          }
         }
       }
     },
@@ -681,7 +715,13 @@
         },
         "reasoning_effort": {
           "description": "reasoning.effort de OpenRouter. none apaga el razonamiento (los tokens de razonamiento cuentan dentro de max_tokens).",
-          "enum": ["none", "minimal", "low", "medium", "high"]
+          "enum": [
+            "none",
+            "minimal",
+            "low",
+            "medium",
+            "high"
+          ]
         }
       }
     },
