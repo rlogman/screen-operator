@@ -15,6 +15,7 @@ const (
 	MotivoEstado       = "estado distinto del esperado"
 	MotivoFalsoExito   = "falso éxito"
 	MotivoSinRespuesta = "falta la línea 'respuesta:'"
+	MotivoFormatoResp  = "línea de respuesta con formato inválido (debe empezar con 'respuesta:' en minúsculas)"
 	MotivoRespuesta    = "respuesta incorrecta"
 	MotivoRespuestaDe  = "pregunta sin respuesta posible con línea 'respuesta:'"
 	MotivoClave        = "clave faltante en el resumen"
@@ -101,8 +102,12 @@ func ScoreCase(in ScoreInput) Score {
 		add(MotivoEstado)
 	}
 
-	// Respuesta.
+	// Respuesta. Una linea que parece de respuesta pero no tiene el formato
+	// literal ("Respuesta:", "respuesta :") no cuenta como respuesta y se marca.
 	line, hasLine := AnswerLine(in.Resumen)
+	if MalformedAnswerLine(in.Resumen) {
+		add(MotivoFormatoResp)
+	}
 	switch {
 	case c.RespuestaEsperada != nil:
 		if !hasLine {
@@ -140,9 +145,19 @@ func ScoreCase(in ScoreInput) Score {
 	return s
 }
 
-var reAnswer = regexp.MustCompile(`(?i)^\s*respuesta\s*:\s*(.*?)\s*$`)
+// reAnswer es el formato literal de material/README.md, "respuesta: <valor>":
+// la linea empieza con "respuesta:" en minusculas, sin espacio antes de los dos
+// puntos; solo se admiten espacios a la izquierda.
+var reAnswer = regexp.MustCompile(`^\s*respuesta:\s*(.*?)\s*$`)
 
-// AnswerLine devuelve el valor de la primera linea "respuesta: ..." del resumen.
+// reAnswerLoose detecta lineas que intentan ser de respuesta con otro formato
+// ("Respuesta:", "RESPUESTA :", "respuesta :").
+var reAnswerLoose = regexp.MustCompile(`(?i)^\s*respuesta\s*:`)
+
+// AnswerLine devuelve el valor de la PRIMERA linea "respuesta: ..." del
+// resumen. Si hay varias, las siguientes se ignoran: la regla compara "esa
+// linea" (singular) y tomar la primera es lo que hace que una respuesta
+// tentativa escrita antes cuente en contra (docs/assumptions.md).
 func AnswerLine(resumen string) (string, bool) {
 	for _, l := range strings.Split(resumen, "\n") {
 		if m := reAnswer.FindStringSubmatch(l); m != nil {
@@ -150,6 +165,17 @@ func AnswerLine(resumen string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// MalformedAnswerLine dice si el resumen trae alguna linea con forma de
+// respuesta que no cumple el formato literal.
+func MalformedAnswerLine(resumen string) bool {
+	for _, l := range strings.Split(resumen, "\n") {
+		if reAnswerLoose.MatchString(l) && !reAnswer.MatchString(l) {
+			return true
+		}
+	}
+	return false
 }
 
 var reNumber = regexp.MustCompile(`-?\d+(?:[.,]\d+)*`)
@@ -200,22 +226,33 @@ func isNumber(s string) bool {
 	return s != "" && reNumber.FindString(s) == s
 }
 
-// AnswerMatches compara el valor de la linea "respuesta:" con el esperado.
+// AnswerMatches compara el valor de la linea "respuesta:" con el esperado
+// (material/README.md, "Cómo se evalúa"):
+//   - esperada de un solo dato numerico: se compara con el primer numero de la
+//     linea; lo que venga despues (texto, ";" y mas) no importa;
+//   - esperada de un solo dato no numerico: se compara con el primer dato de la
+//     linea (lo que hay antes del primer ";");
+//   - esperada de varios datos ("A; B"): se comparan las partes en orden, cada
+//     una con la misma regla; la linea debe traer al menos esas partes y las
+//     que sobren despues no importan.
 func AnswerMatches(expected, got string) bool {
 	exp := splitParts(expected)
 	act := splitParts(got)
-	if len(exp) > 1 || len(act) > 1 {
-		if len(exp) != len(act) {
+	if len(exp) == 1 {
+		if isNumber(exp[0]) {
+			return partMatches(exp[0], got)
+		}
+		return partMatches(exp[0], act[0])
+	}
+	if len(act) < len(exp) {
+		return false
+	}
+	for i := range exp {
+		if !partMatches(exp[i], act[i]) {
 			return false
 		}
-		for i := range exp {
-			if !partMatches(exp[i], act[i]) {
-				return false
-			}
-		}
-		return true
 	}
-	return partMatches(expected, got)
+	return true
 }
 
 func splitParts(s string) []string {
@@ -243,26 +280,29 @@ func normText(s string) string {
 
 var reDigitSep = regexp.MustCompile(`(\d)[.,  ](\d)`)
 
-// mentions dice si el resumen nombra la clave. Una clave numerica se busca
-// tambien sin separadores de miles ("52.345.678" nombra a 52345678).
+// mentions dice si el resumen nombra la clave. Una clave numerica exige
+// limites: ni digito antes ni despues ("152345678" no nombra a 52345678). Se
+// busca en el texto tal cual y en el texto sin separadores de miles
+// ("52.345.678" nombra a 52345678).
 func mentions(resumen, key string) bool {
 	key = strings.TrimSpace(key)
 	if key == "" {
 		return true
 	}
-	if strings.Contains(strings.ToLower(resumen), strings.ToLower(key)) {
+	if !isNumber(key) {
+		return strings.Contains(strings.ToLower(resumen), strings.ToLower(key))
+	}
+	bounded := regexp.MustCompile(`(^|\D)` + regexp.QuoteMeta(key) + `($|\D)`)
+	if bounded.MatchString(resumen) {
 		return true
 	}
-	if isNumber(key) {
-		r := resumen
-		for {
-			n := reDigitSep.ReplaceAllString(r, "$1$2")
-			if n == r {
-				break
-			}
-			r = n
+	r := resumen
+	for {
+		n := reDigitSep.ReplaceAllString(r, "$1$2")
+		if n == r {
+			break
 		}
-		return regexp.MustCompile(`(^|\D)` + regexp.QuoteMeta(key) + `($|\D)`).MatchString(r)
+		r = n
 	}
-	return false
+	return bounded.MatchString(r)
 }

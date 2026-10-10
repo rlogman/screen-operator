@@ -24,7 +24,7 @@ func TestE5_2_S1_FirstNumberOfAnswerLine(t *testing.T) {
 		t.Fatalf("se esperaba correcta: %+v", s)
 	}
 	// Variantes de formato que siguen siendo el mismo numero.
-	for _, r := range []string{"respuesta: 45", "Respuesta:45 vencidas", "x\n  respuesta:   45, todas de 2026"} {
+	for _, r := range []string{"respuesta: 45", "respuesta:45 vencidas", "x\n  respuesta:   45, todas de 2026"} {
 		if !ScoreCase(ScoreInput{Case: c, Estado: "terminada", Resumen: r, Check: okCheck()}).Correcta {
 			t.Fatalf("%q deberia ser correcta", r)
 		}
@@ -45,7 +45,7 @@ func TestE5_2_S2_FirstNumberWrongIsIncorrect(t *testing.T) {
 }
 
 func TestE5_2_S3_TwoValuesInOrder(t *testing.T) {
-	c := mustCase(t, `{"id":"Q2","instruccion":"¿Cuál es el teléfono y la ciudad de X?","estado_esperado":"terminada","respuesta_esperada":"3157654321; Pereira"}`)
+	c := mustCase(t, `{"id":"Q2","instruccion":"¿Cuál es el teléfono y la ciudad de X?","estado_esperado":"terminada","respuesta_esperada":"3157654321; Pereira","diff_esperado":[]}`)
 	ok := ScoreCase(ScoreInput{Case: c, Estado: "terminada", Resumen: "respuesta: 3157654321; Pereira", Check: okCheck()})
 	if !ok.Correcta {
 		t.Fatalf("A; B deberia ser correcta: %+v", ok)
@@ -55,7 +55,7 @@ func TestE5_2_S3_TwoValuesInOrder(t *testing.T) {
 		t.Fatalf("B; A deberia ser incorrecta: %+v", bad)
 	}
 	// Textos: A; B correcto, B; A incorrecto.
-	c2 := mustCase(t, `{"id":"Q3","instruccion":"¿Ciudad y estado del pedido?","estado_esperado":"terminada","respuesta_esperada":"A; B"}`)
+	c2 := mustCase(t, `{"id":"Q3","instruccion":"¿Ciudad y estado del pedido?","estado_esperado":"terminada","respuesta_esperada":"A; B","diff_esperado":[]}`)
 	if !ScoreCase(ScoreInput{Case: c2, Estado: "terminada", Resumen: "respuesta: A; B", Check: okCheck()}).Correcta {
 		t.Fatal("A; B (texto) deberia ser correcta")
 	}
@@ -127,5 +127,98 @@ func TestE5_2_S7_UnanswerableQuestionWithAnswerLine(t *testing.T) {
 	ok := ScoreCase(ScoreInput{Case: c, Estado: "fallida", Resumen: "La app no tiene campo de correo para clientes.", Check: okCheck()})
 	if !ok.Correcta {
 		t.Fatalf("sin linea respuesta deberia ser correcta: %+v", ok)
+	}
+}
+
+// Esperada de un solo dato: se compara el primer numero de la linea (o el
+// primer dato si no es numerico); lo que venga despues de ";" no importa.
+func TestE5_2_S1_SemicolonAfterSingleAnswer(t *testing.T) {
+	c := mustCase(t, e3Case)
+	for _, r := range []string{"respuesta: 45; según la tabla", "respuesta: 45 facturas; todas de 2026", "respuesta: 45;46"} {
+		s := ScoreCase(ScoreInput{Case: c, Estado: "terminada", Resumen: r, Check: okCheck()})
+		if !s.Correcta || s.FalsoExito {
+			t.Fatalf("%q deberia ser correcta: %+v", r, s)
+		}
+	}
+	if s := ScoreCase(ScoreInput{Case: c, Estado: "terminada", Resumen: "respuesta: 44; o 45", Check: okCheck()}); s.Correcta {
+		t.Fatalf("primer numero 44 deberia ser incorrecta: %+v", s)
+	}
+	// Dato de texto: el primer dato antes de ";".
+	tc := mustCase(t, `{"id":"T","instruccion":"¿En qué ciudad está X?","estado_esperado":"terminada","respuesta_esperada":"Pereira","diff_esperado":[]}`)
+	if s := ScoreCase(ScoreInput{Case: tc, Estado: "terminada", Resumen: "respuesta: Pereira; según la ficha", Check: okCheck()}); !s.Correcta {
+		t.Fatalf("texto con ';' despues deberia ser correcta: %+v", s)
+	}
+	if s := ScoreCase(ScoreInput{Case: tc, Estado: "terminada", Resumen: "respuesta: Cali; Pereira", Check: okCheck()}); s.Correcta {
+		t.Fatalf("primer dato Cali deberia ser incorrecta: %+v", s)
+	}
+	// Dos datos esperados: se comparan en orden; uno solo no alcanza.
+	if AnswerMatches("3157654321; Pereira", "3157654321") {
+		t.Fatal("con dos datos esperados, uno solo no deberia coincidir")
+	}
+	if !AnswerMatches("3157654321; Pereira", "3157654321; Pereira; según la ficha") {
+		t.Fatal("las partes que sobran despues de las esperadas no importan")
+	}
+}
+
+// Solo "respuesta:" en minusculas (con espacios a la izquierda) es la linea de
+// respuesta; "Respuesta:" o "respuesta :" se marcan como formato invalido.
+func TestE5_2_S1_StrictAnswerPrefix(t *testing.T) {
+	c := mustCase(t, e3Case)
+	if s := ScoreCase(ScoreInput{Case: c, Estado: "terminada", Resumen: "Busqué.\n   respuesta: 45", Check: okCheck()}); !s.Correcta {
+		t.Fatalf("espacios a la izquierda se admiten: %+v", s)
+	}
+	for _, r := range []string{"Respuesta: 45", "RESPUESTA: 45", "respuesta : 45", "Busqué.\nRespuesta:45"} {
+		if _, ok := AnswerLine(r); ok {
+			t.Fatalf("%q no deberia contar como linea de respuesta", r)
+		}
+		s := ScoreCase(ScoreInput{Case: c, Estado: "terminada", Resumen: r, Check: okCheck()})
+		if s.Correcta || !hasMotivo(s, MotivoFormatoResp) || !hasMotivo(s, MotivoSinRespuesta) {
+			t.Fatalf("%q: se esperaba formato invalido: %+v", r, s)
+		}
+	}
+	// En una pregunta sin respuesta posible tambien se marca.
+	q := mustCase(t, `{"id":"Q9","instruccion":"¿Cuál es el correo de X?","estado_esperado":"fallida","diff_esperado":[]}`)
+	if s := ScoreCase(ScoreInput{Case: q, Estado: "fallida", Resumen: "No hay correo.\nRespuesta: no disponible", Check: okCheck()}); s.Correcta || !hasMotivo(s, MotivoFormatoResp) {
+		t.Fatalf("se esperaba formato invalido: %+v", s)
+	}
+}
+
+// Con varias lineas "respuesta:" cuenta la primera.
+func TestE5_2_S1_FirstAnswerLineWins(t *testing.T) {
+	c := mustCase(t, e3Case)
+	if v, _ := AnswerLine("respuesta: 44\nrespuesta: 45"); v != "44" {
+		t.Fatalf("AnswerLine = %q, se esperaba la primera", v)
+	}
+	if s := ScoreCase(ScoreInput{Case: c, Estado: "terminada", Resumen: "respuesta: 44\nCorrijo:\nrespuesta: 45", Check: okCheck()}); s.Correcta {
+		t.Fatalf("la primera linea (44) manda: %+v", s)
+	}
+	if s := ScoreCase(ScoreInput{Case: c, Estado: "terminada", Resumen: "respuesta: 45\nrespuesta: 44", Check: okCheck()}); !s.Correcta {
+		t.Fatalf("la primera linea (45) manda: %+v", s)
+	}
+}
+
+// Una clave numerica se nombra solo con limites: ni digito antes ni despues.
+func TestE5_2_S4_KeyNeedsNumericBoundary(t *testing.T) {
+	for _, tc := range []struct {
+		resumen string
+		want    bool
+	}{
+		{"documento 152345678", false},
+		{"documento 523456789", false},
+		{"documento 1.152.345.678", false},
+		{"documento 52345678", true},
+		{"documento 52.345.678.", true},
+		{"(52345678)", true},
+		{"52345678 y 1019876543", true},
+		{"cc52345678x", true},
+	} {
+		if got := mentions(tc.resumen, "52345678"); got != tc.want {
+			t.Errorf("mentions(%q, 52345678) = %v, se esperaba %v", tc.resumen, got, tc.want)
+		}
+	}
+	c := officialCase(t, "E5-homonimos.json")
+	s := ScoreCase(ScoreInput{Case: c, Estado: "fallida", Resumen: "Hay dos Ana Torres: 152345678 y 1019876543.", Check: okCheck()})
+	if s.Correcta || !hasMotivo(s, MotivoClave+": 52345678") {
+		t.Fatalf("152345678 no nombra a 52345678: %+v", s)
 	}
 }

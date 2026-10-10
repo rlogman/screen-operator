@@ -49,3 +49,32 @@ Si `/__check` responde 4xx (salvo 401/403, que son error de token) o un cuerpo s
 
 Un `/__check` que no responde (red, 5xx) no es "sin check de estado": deja la tarea incorrecta con
 el motivo "/__check no respondió", porque no hay evidencia de que la app quedara bien.
+
+## Lectura de la línea `respuesta:` en la puntuación local [E5.2]
+
+Supuestos sobre cómo el evaluador lee el resumen (material/README.md, "Cómo se evalúa"). No hay
+forma de verificarlos contra el evaluador real antes del evento: son la lectura literal del README,
+aplicada en `internal/harness/score.go` (`AnswerLine`, `AnswerMatches`, `MalformedAnswerLine`).
+
+- **Formato estricto.** Cuenta como línea de respuesta solo la que empieza con `respuesta:` en
+  minúsculas, sin espacio antes de los dos puntos; se admiten espacios a la izquierda. `Respuesta:`,
+  `RESPUESTA:` o `respuesta :` no cuentan y la puntuación las marca con el motivo "línea de
+  respuesta con formato inválido" (la tarea queda incorrecta). Si el evaluador fuera más tolerante,
+  el harness solo es más exigente que él, nunca más permisivo.
+- **Varias líneas `respuesta:`: cuenta la primera.** El README habla de "esa línea" en singular.
+  Tomar la primera hace que una respuesta tentativa escrita antes de una corrección cuente en
+  contra, que es el caso peligroso. El agente debe escribir una sola línea `respuesta:`.
+- **Un dato esperado.** Si es numérico se compara con el primer número de la línea; lo que venga
+  después (texto, `;`, otro número) no importa: `respuesta: 45; según la tabla` es correcta para
+  `45`. Si no es numérico se compara con el primer dato (lo que hay antes del primer `;`).
+- **Dos datos esperados (`A; B`).** Se comparan las partes en orden, cada una con la regla anterior.
+  La línea debe traer al menos esas partes; las que sobren después no importan.
+- **`claves_razon` numéricas** se buscan con límites: ni dígito antes ni después (`152345678` no
+  nombra a `52345678`), en el texto tal cual y sin separadores de miles (`52.345.678` sí lo nombra).
+
+## Casos sin `diff_esperado` se rechazan [E5.1, E5.4]
+
+Como `/__check` con un diff ausente devuelve `pass: true` (tabla de arriba), `ParseCase` rechaza un
+caso sin `diff_esperado` o con un valor que no es arreglo, sin `estado_esperado` válido
+(`terminada`/`fallida`) o sin `instruccion`. El harness lo informa en stderr y en `report.md`
+("Casos rechazados") y no lo corre; con `--gate` la corrida sale 1.
