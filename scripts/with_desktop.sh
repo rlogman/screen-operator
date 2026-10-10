@@ -11,6 +11,12 @@ for i in $(seq 1 900); do
     "$@"
     exit $?
   fi
+  pid=$(cut -d' ' -f1 "$LOCK/owner" 2>/dev/null || true)
+  if [ -n "$pid" ] && ! kill -0 "$pid" 2>/dev/null; then
+    echo "lock huérfano (PID $pid ya no existe): se libera" >&2
+    rm -rf "$LOCK"
+    continue
+  fi
   [ $((i % 30)) -eq 1 ] && echo "esperando el escritorio (lo usa: $(cat "$LOCK/owner" 2>/dev/null || echo '?'))" >&2
   sleep 1
 done
