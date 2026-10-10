@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"os"
 	"os/exec"
@@ -84,7 +85,7 @@ func TestAgentRejectsInvalidOverlay(t *testing.T) {
 		}
 		return ""
 	}
-	if code := run([]string{"-check-config"}, getenv, &stdout, &stderr); code == 0 {
+	if code := run(context.Background(), []string{"-check-config"}, getenv, &stdout, &stderr, nil); code == 0 {
 		t.Fatal("se esperaba codigo != 0")
 	}
 	if !strings.Contains(stderr.String(), "surface.input.clik_hold_ms") {

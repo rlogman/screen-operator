@@ -7,11 +7,11 @@ build:
 	mkdir -p bin
 	$(GO) build -o bin/ ./cmd/agent ./cmd/harness ./cmd/rfbprobe
 
-# gate: gofmt -l sin archivos listados, go vet y go test. Sale con 0 solo si los tres pasan.
+# gate: gofmt -l sin archivos listados (fuera de .claude/, donde viven los worktrees), go vet y go test. Sale con 0 solo si los tres pasan.
 gate: fmt-check vet test
 
 fmt-check:
-	@out="$$(gofmt -l .)"; \
+	@out="$$(find . -path ./.claude -prune -o -name '*.go' -type f -exec gofmt -l {} +)"; \
 	if [ -n "$$out" ]; then echo "gofmt -l lista archivos sin formato:"; echo "$$out"; exit 1; fi; \
 	echo "gofmt -l: ok"
 

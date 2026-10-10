@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -20,7 +21,10 @@ var ErrUnsupportedSurface = errors.New("superficie no soportada")
 func (l *Loader) ResolveSurface(rawURL string) (Layer, error) {
 	u, err := url.Parse(strings.TrimSpace(rawURL))
 	if err != nil {
-		return Layer{}, fmt.Errorf("%w: URL invalida: %v", ErrUnsupportedSurface, err)
+		// El error de url.Parse contiene la URL cruda (usuario, clave, host, query):
+		// no se envuelve. Solo se nombran esquema y ruta, como en los demas errores.
+		scheme, path := roughSchemePath(rawURL)
+		return Layer{}, fmt.Errorf("%w: URL invalida (esquema %q, ruta %q)", ErrUnsupportedSurface, scheme, path)
 	}
 	surfaces, err := l.Surfaces()
 	if err != nil {
@@ -45,6 +49,40 @@ func (l *Loader) ResolveSurface(rawURL string) (Layer, error) {
 		return Layer{}, fmt.Errorf("URL con esquema %q y ruta %q coincide con varias superficies: %s",
 			u.Scheme, u.Path, strings.Join(ids, ", "))
 	}
+}
+
+var (
+	reScheme   = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9+.-]*$`)
+	reSafePath = regexp.MustCompile(`^[A-Za-z0-9/._~-]*$`)
+)
+
+// roughSchemePath extrae esquema y ruta de una URL que url.Parse rechazo, sin
+// devolver nunca autoridad (usuario, clave, host, puerto), query ni fragmento.
+// Una ruta que no tiene forma segura (p. ej. una clave con '/' sin escapar que
+// parte la autoridad) se reporta como "?".
+func roughSchemePath(raw string) (scheme, path string) {
+	raw = strings.TrimSpace(raw)
+	scheme, rest := "?", raw
+	// Solo cuenta como esquema lo que va antes de "://": en "usuario:clave@host"
+	// la primera palabra es el usuario y no se repite.
+	if i := strings.Index(raw, "://"); i > 0 && reScheme.MatchString(raw[:i]) {
+		scheme, rest = raw[:i], raw[i+1:]
+	}
+	if i := strings.IndexAny(rest, "?#"); i >= 0 {
+		rest = rest[:i]
+	}
+	if strings.HasPrefix(rest, "//") {
+		rest = rest[2:]
+		i := strings.Index(rest, "/")
+		if i < 0 {
+			return scheme, ""
+		}
+		rest = rest[i:]
+	}
+	if !reSafePath.MatchString(rest) {
+		return scheme, "?"
+	}
+	return scheme, rest
 }
 
 func surfaceMatches(tree map[string]any, u *url.URL) bool {
