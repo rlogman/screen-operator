@@ -286,10 +286,9 @@ func (g *Guard) verifyCreate(st *agent.State, _ *agent.FinishRequest) agent.Deci
 func (g *Guard) verifyExport(st *agent.State, f *agent.FinishRequest) agent.Decision {
 	post, postCols := g.postRows()
 	if len(post) == 0 {
-		if strings.TrimSpace(f.Evidence) == "" {
-			return agent.Deny("no se pudo leer la lista de reportes para verificar el exporte; no se da por terminada")
-		}
-		return agent.Allow
+		// La evidencia escrita por el modelo no basta: sin una lectura de la lista de
+		// reportes posterior al exporte no se da por terminada (E7.4-S4).
+		return agent.Deny("no se pudo leer la lista de reportes para verificar el exporte; la evidencia escrita no basta")
 	}
 	// Filas que ya estaban antes del commit en una lista con las mismas columnas.
 	before := map[string]bool{}

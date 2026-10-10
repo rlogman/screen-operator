@@ -322,3 +322,16 @@ func TestE7_4_S1_EditNeedsCodeReadBackNotEvidence(t *testing.T) {
 		t.Fatalf("relectura correcta rechazada: %s", d.Reason)
 	}
 }
+
+func TestE7_4_S4_ExportEvidenceOnlyIsDenied(t *testing.T) {
+	s := st("Exporta el reporte de pedidos entregados en septiembre de 2026.", agent.IntentExport, "pedidos",
+		map[string]string{"estado": "Entregado", "periodo": "septiembre de 2026"})
+	g := New().(*Guard)
+	g.BeforeAction(s, commit("pedidos", "Exportar pedidos"))
+	s.Phase = agent.PhaseVerify
+	// Sin ninguna lectura posterior al exporte, la evidencia escrita del modelo no basta.
+	d := g.BeforeFinish(s, finishDone("Exporté el reporte de pedidos entregados de septiembre."))
+	if !d.Deny || !strings.Contains(d.Reason, "evidencia escrita no basta") {
+		t.Fatalf("decision = %+v", d)
+	}
+}
