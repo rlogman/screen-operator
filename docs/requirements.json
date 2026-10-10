@@ -21,7 +21,7 @@
           "acceptance_criteria": [
             "Given el repositorio sin código Go When se ejecuta 'make build' Then se compilan los binarios cmd/agent, cmd/harness y cmd/rfbprobe sin errores y quedan en ./bin [E1.1-S1]",
             "Given el código del repositorio When se ejecuta 'make gate' Then corre gofmt -l (sin archivos listados), go vet ./... y go test ./... y el comando sale con código 0 solo si los tres pasan [E1.1-S2]",
-            "Given el repositorio When se ejecuta 'make test-epic E=3' Then corre exactamente go test ./... -run '^TestE3_' con -count=1 y sale con el código de go test [E1.1-S3]",
+            "Given el repositorio When se ejecuta 'make test-epic E=3' Then corre exactamente go test ./... -run '^TestE3_' con -count=1 y sale con código 0 si go test pasa y con un código distinto de 0 si falla [E1.1-S3]",
             "Given el archivo .gitignore When se lista lo ignorado Then incluye bin/, .env, .artifex/*.db, traces/ y runs/ y no ignora config/ ni docs/ [E1.1-S4]"
           ],
           "technical_notes": [
