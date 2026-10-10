@@ -118,10 +118,13 @@ type Config struct {
 	// Escalation decide los pasos trabados (Model "" = sin escalamiento).
 	Escalation       llm.Role
 	EscalationPolicy llm.Escalation
-	MaxSteps         int
-	Perception       screen.Perception
-	Summary          summary.Format
-	TodayFrom        string // policy.today_source: app o server
+	// Grounder ubica el elemento que el actor describe en un clic (historia
+	// 8.1; Model "" = apagado: se usan las coordenadas del actor).
+	Grounder   llm.Role
+	MaxSteps   int
+	Perception screen.Perception
+	Summary    summary.Format
+	TodayFrom  string // policy.today_source: app o server
 }
 
 // Outcome es el resultado de una tarea.
@@ -136,11 +139,14 @@ type Outcome struct {
 type Agent struct {
 	LLM    llm.Chatter
 	Screen Screen
-	Guard  Guard  // nil = DefaultGuard
-	Trace  Tracer // nil = sin traza
-	Log    *slog.Logger
-	Cfg    Config
-	Now    func() time.Time
+	Guard  Guard // nil = DefaultGuard
+	// Locator ubica elementos cuando Cfg.Grounder esta configurado (nil =
+	// UITARS sobre LLM). Sin el rol no se usa aunque este puesto.
+	Locator Grounder
+	Trace   Tracer // nil = sin traza
+	Log     *slog.Logger
+	Cfg     Config
+	Now     func() time.Time
 	// AppHints devuelve el id y las pistas del perfil de app que coincide con
 	// el texto visible ("" si no hay perfil o estan apagados).
 	AppHints func(screenText string) (id, hints string)
@@ -192,6 +198,9 @@ func (a *Agent) init() {
 	}
 	if a.Cfg.Extractor.Model == "" {
 		a.Cfg.Extractor = a.Cfg.Actor
+	}
+	if a.groundingOn() && a.Locator == nil {
+		a.Locator = &UITARS{LLM: a.LLM, Role: a.Cfg.Grounder}
 	}
 }
 
@@ -290,6 +299,14 @@ func (a *Agent) loop(ctx context.Context) Outcome {
 			continue
 		}
 		modelErrs = 0
+		gu, gerr := a.ground(ctx, &act)
+		usage = addUsage(usage, gu)
+		switch {
+		case errors.Is(gerr, llm.ErrBudget):
+			return a.fail(ctx, ReasonBudget, nil)
+		case gerr != nil && ctx.Err() != nil:
+			return a.fail(ctx, ReasonTimeout, nil)
+		}
 		if act.Kind != KindFinish && act.Phase != "" && phaseBefore.Before(act.Phase) {
 			st.enter(act.Phase)
 			if act.Phase == PhaseVerify {
@@ -434,6 +451,8 @@ func (a *Agent) ask(ctx context.Context, purpose string, role llm.Role, user llm
 	sysText := SystemPrompt()
 	if purpose == "extraer" {
 		sysText = ExtractSystemPrompt()
+	} else if purpose == "actuar" && a.groundingOn() {
+		sysText += "\n\n" + render("grounder", nil)
 	}
 	sys := llm.Message{Role: "system", Parts: []llm.Part{llm.TextPart(sysText)}}
 	req := llm.Request{Model: role.Model, Temperature: role.Temperature, MaxTokens: role.MaxTokens, JSON: true, Purpose: purpose,

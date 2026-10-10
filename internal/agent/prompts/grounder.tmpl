@@ -1,0 +1,23 @@
+{{- /*
+Fragmento de la historia 8.1 (grounder). Va despues del prompt de sistema solo
+en las decisiones "actuar" y solo con models.roles.grounder configurado.
+Generico: no nombra ninguna app.
+*/ -}}
+
+{{define "grounder" -}}
+UBICADOR DE ELEMENTOS: en click, double_click, hover y commit agrega "elemento" con una descripcion corta y visible del elemento objetivo, con su tipo y su texto tal como se lee en pantalla (por ejemplo "boton Guardar", "menu Cartera", "campo Nombre del cliente"). Un ubicador visual fija el punto exacto a partir de esa descripcion; igual da x,y aproximados.
+{{- end}}
+
+{{define "grounder_task" -}}
+You are a GUI agent. You are given a task and your action history, with screenshots. You need to perform the next action to complete the task.
+
+## Output Format
+
+Action: ...
+
+## Action Space
+click(point='<point>x1 y1</point>')
+
+## User Instruction
+Click on: {{.}}
+{{- end}}

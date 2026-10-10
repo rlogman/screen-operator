@@ -15,10 +15,10 @@ const PromptVersion = "v1"
 // que se agrega al prompt de sistema sin editar v1.tmpl.
 const GuardrailsVersion = "g2"
 
-//go:embed prompts/v1.tmpl prompts/guardrails.tmpl
+//go:embed prompts/v1.tmpl prompts/guardrails.tmpl prompts/grounder.tmpl
 var promptFS embed.FS
 
-var prompts = template.Must(template.New("v1.tmpl").Option("missingkey=error").ParseFS(promptFS, "prompts/v1.tmpl", "prompts/guardrails.tmpl"))
+var prompts = template.Must(template.New("v1.tmpl").Option("missingkey=error").ParseFS(promptFS, "prompts/v1.tmpl", "prompts/guardrails.tmpl", "prompts/grounder.tmpl"))
 
 // render ejecuta una plantilla con nombre.
 func render(name string, data any) string {

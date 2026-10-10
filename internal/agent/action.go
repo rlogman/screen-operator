@@ -136,6 +136,11 @@ type Action struct {
 	Target        string
 	ConfirmDialog bool // confirma el dialogo que abrio un commit anterior sobre el mismo objetivo
 
+	// Element describe el elemento objetivo de un click ("boton Guardar"); con
+	// models.roles.grounder configurado, el grounder fija X,Y (historia 8.1).
+	Element  string
+	Grounded bool // X,Y vienen del grounder
+
 	// Label es el texto del elemento bajo un click, leido con zoom antes de
 	// consultar al guardrail (epica 7.3-S4). "" = no se leyo.
 	Label string
@@ -238,6 +243,7 @@ type rawAction struct {
 	Verificado  *bool             `json:"verificado"`
 	Evidencia   string            `json:"evidencia"`
 	Dialogo     *bool             `json:"dialogo"`
+	Elemento    string            `json:"elemento"`
 	unknownKeys []string
 }
 
@@ -246,7 +252,7 @@ var knownKeys = map[string]bool{
 	"text": true, "replace": true, "combo": true, "direction": true, "amount": true, "what": true, "key": true,
 	"filters": true, "purpose": true, "target": true, "estado": true, "datos": true, "identificadores": true,
 	"agregado": true, "entidad": true, "id_registro": true, "cambios": true, "verificado": true, "evidencia": true,
-	"dialogo": true,
+	"dialogo": true, "elemento": true,
 }
 
 // Parse valida la salida del modelo contra el esquema y convierte las
@@ -270,7 +276,8 @@ func Parse(content string, v View) (Action, error) {
 	if len(r.unknownKeys) > 0 {
 		return Action{}, perr(r.unknownKeys[0], "campo desconocido")
 	}
-	a := Action{Kind: Kind(strings.ToLower(strings.TrimSpace(r.Action))), Reason: firstNonEmpty(r.Reason, r.Razon), Note: strings.TrimSpace(r.Nota)}
+	a := Action{Kind: Kind(strings.ToLower(strings.TrimSpace(r.Action))), Reason: firstNonEmpty(r.Reason, r.Razon), Note: strings.TrimSpace(r.Nota),
+		Element: strings.TrimSpace(r.Elemento)}
 	if a.Kind == "" {
 		return Action{}, perr("action", "falta la accion")
 	}

@@ -64,3 +64,28 @@ Límites de la evidencia: B se midió una sola vez en 3 casos, así que 2/3 no e
 - `sin_avance`: `stall_steps` decisiones en la misma fase. Después de escalar, el contador vuelve a empezar.
 
 Cada disparador gasta una sola decisión escalada. Hay dos topes por tarea: `max_steps` decisiones escaladas, y `max_task_cost_usd`, que impide escalar cuando la tarea ya gastó ese monto. Si el rol no está configurado, el agente se comporta como antes. Código: `internal/agent/escalate.go`. Tests con LLM falso: `internal/agent/escalate_test.go`.
+
+## Grounder (historia 8.1, apagado por defecto)
+
+`models.roles.grounder` es opcional y `config/base.yaml` no lo configura: no hubo tiempo de medir su efecto en tareas reales antes de la corrida que cuenta. Sin el rol, el agente usa las coordenadas del actor y el prompt no cambia.
+
+Con el rol configurado, en cada `click`, `double_click`, `hover` o `commit` el actor agrega `"elemento"` (por ejemplo `"boton Guardar"`). El grounder recibe la misma imagen que vio el actor y fija el punto. Si el grounder falla o devuelve un punto fuera de la imagen, se usan las coordenadas del actor. Su costo se suma al del paso y cuenta para `budgets.max_cost_usd`.
+
+Cómo activarlo:
+
+- En `config/base.yaml`, descomentar la línea `grounder:` que está bajo `models.roles`.
+- O, sin tocar `base.yaml`, apuntar `SO_CONFIG_OVERLAY` a un archivo con:
+
+```yaml
+models:
+  roles:
+    grounder: { model: bytedance/ui-tars-1.5-7b, temperature: 0, max_tokens: 64, price_in_usd_per_mtok: 0.10, price_out_usd_per_mtok: 0.20 }
+```
+
+La validación de configuración pasa con y sin el rol.
+
+Formato de UI-TARS-1.5. Fuente: `github.com/bytedance/UI-TARS`, rama main, archivos `README_coordinates.md` y `codes/ui_tars/action_parser.py`. La salida es `click(start_box='(x,y)')` o `click(point='<point>x y</point>')`. Las coordenadas son píxeles absolutos de la imagen redimensionada con `smart_resize`, no una escala 0-1000. `smart_resize` deja cada lado en un múltiplo de 28, con un total de entre 100·28·28 y 16384·28·28 píxeles. El agente envía la imagen ya redimensionada (1280x800 pasa a 1288x812) y luego convierte: `x_pantalla = x / ancho_redimensionado * ancho_original`.
+
+Prueba real (`make test-live LIVE_RUN=^TestE8_1_S3_`, 2026-10-10): pedido "menú Cartera" sobre `internal/agent/testdata/sigecom_home.png`. Salida: `click(start_box='(205,50)')`, que en pantalla es (203,49), dentro del menú. Consumo: 1.420 tokens de entrada, US$ 0,00015.
+
+Código: `internal/agent/ground.go`. Tests con fakes: `internal/agent/ground_test.go`.
