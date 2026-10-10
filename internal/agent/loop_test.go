@@ -175,6 +175,36 @@ func TestE6_3_S5_RejectTouchesNothing(t *testing.T) {
 	}
 }
 
+// En vivo el modelo repitio clics sin efecto o que abrian y cerraban un menu:
+// el historial se lo marca para que cambie de estrategia.
+func TestLoopFlagsRepeatedActions(t *testing.T) {
+	chat := fakes.NewScriptedLLM(jsonClassifyEdit, jsonOrient)
+	chat.Default = &fakes.Reply{Content: `{"fase":"localizar","action":"click","x":100,"y":40}`}
+	a, _ := newTestAgent(t, chat, gray(), 3)
+	out := a.Run(context.Background(), "Corrige la dirección de X: ahora es Y.")
+	if h := strings.Join(out.State.History, "\n"); !strings.Contains(h, "SEGUNDA VEZ SIN EFECTO") {
+		t.Fatalf("historial = %s", h)
+	}
+
+	d := gray()
+	on := false
+	d.OnClick = func(d *fakes.Driver, x, y int) {
+		on = !on
+		c := color.RGBA{220, 220, 220, 255}
+		if on {
+			c = color.RGBA{0, 0, 200, 255}
+		}
+		d.Fill(image.Rect(0, 0, 300, 300), c)
+	}
+	chat = fakes.NewScriptedLLM(jsonClassifyEdit, jsonOrient)
+	chat.Default = &fakes.Reply{Content: `{"fase":"localizar","action":"click","x":100,"y":40}`}
+	a, _ = newTestAgent(t, chat, d, 4)
+	out = a.Run(context.Background(), "Corrige la dirección de X: ahora es Y.")
+	if h := strings.Join(out.State.History, "\n"); !strings.Contains(h, "REPETISTE ESTA ACCION") {
+		t.Fatalf("historial = %s", h)
+	}
+}
+
 // Arrastre de so-epic-2: con Stable=false el loop vuelve a capturar y no
 // decide sobre una captura no estable.
 func TestLoopDoesNotDecideOnUnstableCapture(t *testing.T) {

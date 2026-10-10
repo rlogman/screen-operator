@@ -144,8 +144,9 @@ type Agent struct {
 	hints        string
 	view         *View // imagen actual del modelo (nil = capturar de nuevo)
 	full         *screen.ModelShot
-	stable       bool   // la vista actual salio de una captura estable
-	lastNoEffect string // ultima accion que no cambio la pantalla
+	stable       bool     // la vista actual salio de una captura estable
+	lastNoEffect string   // ultima accion que no cambio la pantalla
+	recent       []string // ultimas acciones de pantalla
 	deadline     time.Time
 	parseErrs    int
 }
@@ -699,6 +700,15 @@ func (a *Agent) doScreenAction(ctx context.Context, act Action) error {
 	} else {
 		a.lastNoEffect = act.String()
 	}
+	a.recent = append(a.recent, act.String())
+	if len(a.recent) > 4 {
+		a.recent = a.recent[len(a.recent)-4:]
+	}
+	if n := countEqual(a.recent, act.String()); n >= 3 && out.Changed {
+		// Un clic que abre y cierra lo mismo (p. ej. un menu) cambia la pantalla
+		// pero no avanza.
+		result += fmt.Sprintf("; REPETISTE ESTA ACCION %d VECES SIN AVANZAR: un clic sobre un menu abierto lo cierra; usa hover sobre la opcion o el submenu, pide zoom o prueba otro camino", n)
+	}
 	a.record(fmt.Sprintf("%d. [%s] %s%s → %s", st.Steps, st.Phase, act, reason, result))
 	if out.Stable && out.Screen != nil {
 		a.setFull(out.Screen)
@@ -927,6 +937,16 @@ func errText(err error) string {
 		return ""
 	}
 	return truncate(err.Error(), 200)
+}
+
+func countEqual(xs []string, s string) int {
+	n := 0
+	for _, x := range xs {
+		if x == s {
+			n++
+		}
+	}
+	return n
 }
 
 func uniq(xs []string) []string {
