@@ -110,6 +110,14 @@ func cell(v any) string {
 }
 
 // Aggregator acumula filas de una lista paginada.
+//
+// Detenida (Stopped) y completa (Complete) son estados distintos: la
+// extraccion se detiene cuando no hay pagina siguiente habilitada o la pagina
+// no avanzo, pero solo es completa si se vieron todas las paginas. Con
+// indicador "Pagina N de M" completa = paginas vistas {1..M}. Sin indicador,
+// cada extraccion debe estar separada de la anterior por exactamente un avance
+// de pagina (NoteAdvance) y la ultima debe tener "siguiente" deshabilitado.
+// El cierre con agregado exige Complete.
 type Aggregator struct {
 	What    string
 	KeyCol  string
@@ -120,13 +128,22 @@ type Aggregator struct {
 	seen    map[string]bool
 	lastSig string
 	pages   int
-	Done    bool
-	Stop    string // por que se detuvo la extraccion
+
+	pageSeen map[int]bool // numeros de pagina extraidos (por indicador)
+	total    int          // M del indicador; 0 = desconocido
+	lastNum  int          // numero de la ultima pagina extraida; 0 = desconocido
+	advances int          // avances de pagina desde la ultima extraccion
+	chainBad string       // sin indicador: por que la cadena de avances no es confiable
+	restart  bool         // la proxima extraccion reinicia el acumulado
+
+	Stopped  bool   // no hay que seguir avanzando (o la pagina no avanzo)
+	Complete bool   // se vieron todas las paginas
+	Stop     string // por que se detuvo o por que esta incompleta
 }
 
 // NewAggregator crea un acumulador. keyCol vacio = la fila completa es la clave.
 func NewAggregator(what, keyCol, purpose string, filters map[string]string) *Aggregator {
-	return &Aggregator{What: what, KeyCol: keyCol, Purpose: purpose, Filters: filters, seen: map[string]bool{}}
+	return &Aggregator{What: what, KeyCol: keyCol, Purpose: purpose, Filters: filters, seen: map[string]bool{}, pageSeen: map[int]bool{}}
 }
 
 // Same indica si una extraccion nueva continua la misma lista.
@@ -140,9 +157,36 @@ func (g *Aggregator) Same(keyCol, purpose string, filters map[string]string) boo
 	return fmt.Sprint(sortedMap(filters)) == fmt.Sprint(sortedMap(g.Filters))
 }
 
-// AddPage agrega una pagina. Devuelve las filas nuevas y si la extraccion debe
-// detenerse: boton siguiente deshabilitado o ausente, o pagina repetida.
+// NoteAdvance registra un avance de pagina (clic en "siguiente" con efecto)
+// entre dos extracciones.
+func (g *Aggregator) NoteAdvance() { g.advances++ }
+
+var reIndicator = regexp.MustCompile(`(?i)(\d+)\s*(?:de|of|/)\s*(\d+)`)
+
+// ParseIndicator lee "Pagina N de M". ok=false si no hay indicador valido.
+func ParseIndicator(s string) (n, m int, ok bool) {
+	sm := reIndicator.FindStringSubmatch(s)
+	if sm == nil {
+		return 0, 0, false
+	}
+	n, _ = strconv.Atoi(sm[1])
+	m, _ = strconv.Atoi(sm[2])
+	if n < 1 || m < 1 || n > m {
+		return 0, 0, false
+	}
+	return n, m, true
+}
+
+// AddPage agrega una pagina. Devuelve las filas nuevas y si la extraccion se
+// detuvo (Stopped). Detenida no implica completa: ver Complete y Stop.
 func (g *Aggregator) AddPage(p Page) (added int, stop bool) {
+	adv := g.advances
+	g.advances = 0
+	if g.restart {
+		*g = *NewAggregator(g.What, g.KeyCol, g.Purpose, g.Filters)
+		adv = 0
+	}
+	first := g.pages == 0
 	g.pages++
 	keys := make([]string, 0, len(p.Rows))
 	for _, r := range p.Rows {
@@ -157,14 +201,68 @@ func (g *Aggregator) AddPage(p Page) (added int, stop bool) {
 	}
 	sort.Strings(keys)
 	sig := strings.Join(keys, "\x00")
-	switch {
-	case len(p.Rows) > 0 && sig == g.lastSig:
-		g.Done, g.Stop = true, "la pagina nueva repite la anterior"
-	case !p.NextEnabled:
-		g.Done, g.Stop = true, "no hay pagina siguiente habilitada"
-	}
+	n, m, hasInd := ParseIndicator(p.Indicator)
+	repeated := !first && ((len(p.Rows) > 0 && sig == g.lastSig) || (hasInd && n == g.lastNum))
 	g.lastSig = sig
-	return added, g.Done
+
+	if hasInd {
+		if m > g.total {
+			g.total = m
+		}
+	} else if repeated {
+		n = g.lastNum
+	} else if g.lastNum > 0 && adv == 1 {
+		n = g.lastNum + 1 // sin indicador en esta pagina: se deduce del avance unico
+	} else {
+		n = 0
+	}
+	if !first && !repeated && !hasInd && adv != 1 && g.total == 0 {
+		if adv == 0 {
+			g.chainBad = "entre dos extracciones no hubo un avance de pagina reconocido"
+		} else {
+			g.chainBad = fmt.Sprintf("entre dos extracciones hubo %d avances de pagina: pudo saltarse una pagina", adv)
+		}
+	}
+	if n > 0 {
+		g.pageSeen[n] = true
+		g.lastNum = n
+	} else if !repeated {
+		g.lastNum = 0
+	}
+
+	g.Stopped = repeated || !p.NextEnabled
+	g.Complete, g.Stop = g.completeness(p, repeated)
+	return added, g.Stopped
+}
+
+// completeness decide si se vieron todas las paginas y explica por que no.
+func (g *Aggregator) completeness(p Page, repeated bool) (bool, string) {
+	if repeated && p.NextEnabled {
+		return false, "la pagina no avanzo; reintenta siguiente"
+	}
+	if g.total > 0 {
+		var missing []string
+		for i := 1; i <= g.total; i++ {
+			if !g.pageSeen[i] {
+				missing = append(missing, strconv.Itoa(i))
+			}
+		}
+		if len(missing) > 0 {
+			return false, fmt.Sprintf("faltan las paginas %s de %d: navega a cada una y extraela", strings.Join(missing, ", "), g.total)
+		}
+		return true, fmt.Sprintf("se extrajeron las %d paginas", g.total)
+	}
+	if g.chainBad != "" {
+		g.restart = true
+		return false, g.chainBad + "; vuelve a la primera pagina de la lista y extrae de nuevo pagina por pagina (el acumulado se reinicia)"
+	}
+	if p.NextEnabled {
+		return false, "hay pagina siguiente: avanza y vuelve a extraer"
+	}
+	if repeated {
+		return true, "la pagina repite la anterior y no hay pagina siguiente habilitada"
+	}
+	return true, "no hay pagina siguiente habilitada"
 }
 
 func (g *Aggregator) rowKey(r Row) string {
@@ -251,10 +349,11 @@ func (g *Aggregator) Summary() string {
 	if len(missing) > 0 {
 		s += fmt.Sprintf(" (columnas de filtro no vistas: %v)", missing)
 	}
-	if g.Done {
+	switch {
+	case g.Complete:
 		s += "; extraccion completa: " + g.Stop
-	} else {
-		s += "; hay pagina siguiente: avanza y vuelve a extraer"
+	default:
+		s += "; extraccion INCOMPLETA: " + g.Stop
 	}
 	return s
 }

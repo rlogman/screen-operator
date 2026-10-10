@@ -147,6 +147,9 @@ type Agent struct {
 	stable       bool     // la vista actual salio de una captura estable
 	lastNoEffect string   // ultima accion que no cambio la pantalla
 	recent       []string // ultimas acciones de pantalla
+	// nextXY: centro de "siguiente" en pantalla segun la ultima extraccion.
+	nextX, nextY int
+	hasNextXY    bool
 	deadline     time.Time
 	parseErrs    int
 }
@@ -626,16 +629,25 @@ func (a *Agent) doExtract(ctx context.Context, act Action) error {
 	if st.Extract == nil || !st.Extract.Same(act.KeyCol, act.Purpose, act.Filters) {
 		st.Extract = NewAggregator(act.What, act.KeyCol, act.Purpose, act.Filters)
 	}
-	added, stop := st.Extract.AddPage(page)
-	msgStop := "hay pagina siguiente: avanza y vuelve a extraer"
-	if page.HasNextXY && page.NextEnabled {
+	before := len(st.Extract.Rows())
+	st.Extract.AddPage(page)
+	added := len(st.Extract.Rows()) - before
+	a.hasNextXY = false
+	msgStop := st.Extract.Stop
+	if st.Extract.Complete {
+		msgStop = "extraccion completa (" + st.Extract.Stop + ")"
+	} else if st.Extract.Stopped {
+		msgStop = "extraccion INCOMPLETA: " + st.Extract.Stop
+	}
+	if page.HasNextXY && page.NextEnabled && !st.Extract.Complete {
 		if page.NextX >= 0 && page.NextY >= 0 && page.NextX < full.Img.Bounds().Dx() && page.NextY < full.Img.Bounds().Dy() {
 			x, y := full.ToScreen(page.NextX, page.NextY)
-			msgStop += fmt.Sprintf(" (el lector ubico 'siguiente' en %d,%d)", x, y)
+			a.nextX, a.nextY, a.hasNextXY = x, y, true
+			msgStop += fmt.Sprintf(" (el lector ubico 'siguiente' en %d,%d; un solo clic por pagina)", x, y)
 		}
 	}
-	if stop {
-		msgStop = "extraccion completa (" + st.Extract.Stop + ")"
+	if page.Indicator != "" {
+		msgStop += "; indicador: " + truncate(page.Indicator, 40)
 	}
 	a.record(fmt.Sprintf("%d. [%s] %s — %d filas visibles, %d nuevas; acumulado %d unicas, %d cumplen filtros; %s",
 		st.Steps, st.Phase, act, len(page.Rows), added, len(st.Extract.Rows()), st.Extract.Count(), msgStop))
@@ -700,6 +712,9 @@ func (a *Agent) doScreenAction(ctx context.Context, act Action) error {
 	} else {
 		a.lastNoEffect = act.String()
 	}
+	if out.Changed && st.Extract != nil && a.isPageAdvance(act) {
+		st.Extract.NoteAdvance()
+	}
 	a.recent = append(a.recent, act.String())
 	if len(a.recent) > 4 {
 		a.recent = a.recent[len(a.recent)-4:]
@@ -746,15 +761,22 @@ func (a *Agent) doFinish(ctx context.Context, act Action, phaseBefore Phase, rej
 		a.view = nil // verificar sobre una captura nueva
 		return Outcome{}, false, verifyHint(st)
 	}
+	if f.Aggregate == "" && st.Class.Question && st.Extract != nil && (st.Extract.Purpose == "conteo" || st.Extract.Purpose == "suma") {
+		// Un conteo o una suma nunca se acepta "a ojo": el numero lo pone el codigo.
+		if *rejects > 3 {
+			return a.fail(ctx, "la respuesta de "+st.Extract.Purpose+" no vino calculada por el codigo", nil), true, ""
+		}
+		return Outcome{}, false, a.rejectFinish(rejects, act, "extrajiste con purpose \""+st.Extract.Purpose+"\": termina con \"agregado\":\"conteo\" (o \"suma:<columna>\") para que el codigo calcule el numero; no lo pongas a ojo en datos")
+	}
 	if f.Aggregate != "" {
 		if st.Extract == nil || st.Extract.Pages() == 0 {
 			return Outcome{}, false, a.rejectFinish(rejects, act, "pediste agregado pero no hay filas extraidas: usa extract en cada pagina")
 		}
-		if !st.Extract.Done {
+		if !st.Extract.Complete {
 			if *rejects > 3 {
-				return a.fail(ctx, "la extraccion de la lista quedo incompleta", nil), true, ""
+				return a.fail(ctx, "la extraccion de la lista quedo incompleta: "+st.Extract.Stop, nil), true, ""
 			}
-			return Outcome{}, false, a.rejectFinish(rejects, act, "la extraccion no esta completa: avanza a la pagina siguiente y extrae de nuevo")
+			return Outcome{}, false, a.rejectFinish(rejects, act, "la extraccion no esta completa: "+st.Extract.Stop)
 		}
 		val, err := a.aggregate(f.Aggregate)
 		if err != nil {
@@ -770,6 +792,29 @@ func (a *Agent) doFinish(ctx context.Context, act Action, phaseBefore Phase, rej
 	}
 	a.record(fmt.Sprintf("%d. [%s] %s — aceptado", st.Steps, st.Phase, act))
 	return a.final(ctx, true, f.Reason, nil, f), true, ""
+}
+
+// isPageAdvance reconoce un clic que avanza de pagina: cerca del
+// "siguiente" que ubico el lector, o descrito como tal en la razon.
+func (a *Agent) isPageAdvance(act Action) bool {
+	switch act.Kind {
+	case KindClick, KindDoubleClick:
+	default:
+		return false
+	}
+	if a.hasNextXY {
+		dx, dy := act.X-a.nextX, act.Y-a.nextY
+		if dx*dx+dy*dy <= 40*40 {
+			return true
+		}
+	}
+	r := strings.ToLower(act.Reason)
+	for _, w := range []string{"siguiente", "next", "proxima", "próxima", "avanza"} {
+		if strings.Contains(r, w) {
+			return true
+		}
+	}
+	return false
 }
 
 func (a *Agent) rejectFinish(rejects *int, act Action, why string) string {
