@@ -216,7 +216,7 @@ func TestAgentRealRunnerFailsUnreachableDesktop(t *testing.T) {
 	if resp.StatusCode != 200 || created["task_id"] == "" {
 		t.Fatalf("POST /tasks = %d %v", resp.StatusCode, created)
 	}
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(15 * time.Second) // el adaptador reintenta la conexion (2 esperas de 3 s)
 	for {
 		g, _ := http.NewRequest(http.MethodGet, "http://agent/tasks/"+created["task_id"], nil)
 		g.Header.Set("Authorization", "Bearer t0k")

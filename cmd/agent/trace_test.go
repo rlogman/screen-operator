@@ -29,7 +29,7 @@ func submitAndWait(t *testing.T, ln *memListener) string {
 	_ = json.NewDecoder(resp.Body).Decode(&created)
 	resp.Body.Close()
 	id := created["task_id"]
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(15 * time.Second) // el adaptador reintenta la conexion (2 esperas de 3 s)
 	for {
 		g, _ := http.NewRequest(http.MethodGet, "http://agent/tasks/"+id, nil)
 		g.Header.Set("Authorization", "Bearer t0k")
