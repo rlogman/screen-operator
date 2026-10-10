@@ -113,6 +113,62 @@ func TestE10_1_S1_InformativeDialogClosedBeforeAnyAction(t *testing.T) {
 	}
 }
 
+// En v4.2 el modal de novedades reaparece durante la tarea: si vuelve identico
+// al que se cerro al abrir, el codigo lo cierra sin gastar pasos ni llamadas.
+func TestE10_1_S1_ReappearingDialogClosedInCode(t *testing.T) {
+	entendido := image.Rect(795, 472, 886, 494)
+	d := fakes.NewDriver(1280, 800, color.RGBA{128, 128, 128, 255})
+	drawModal := func(dd *fakes.Driver) {
+		dd.Fill(image.Rect(0, 0, 1280, 800), color.RGBA{128, 128, 128, 255})
+		dd.Fill(image.Rect(380, 296, 900, 503), color.RGBA{250, 250, 250, 255})
+	}
+	drawModal(d)
+	d.OnClick = func(dd *fakes.Driver, x, y int) {
+		switch {
+		case (image.Point{x, y}).In(entendido):
+			dd.Fill(image.Rect(0, 0, 1280, 800), color.RGBA{220, 220, 220, 255})
+		case x < 200 && y < 200: // abrir un modulo hace reaparecer el modal
+			drawModal(dd)
+		}
+	}
+	chat := fakes.NewScriptedLLM(jsonClassifyEdit, jsonOpeningInfo, jsonOpeningNoDialog, jsonOrient,
+		`{"action":"click","x":100,"y":100,"fase":"localizar"}`,
+		`{"action":"finish","estado":"fallida","razon":"prueba"}`)
+	a, tr := newTestAgent(t, chat, d, 5)
+	a.Cfg.Dialogs = dialogPolicy(t)
+	out := a.Run(context.Background(), "Corrige la dirección de X: ahora es Y.")
+	if out.Done {
+		t.Fatalf("el guion termina fallida: %s", out.Summary)
+	}
+	var onButton int
+	for _, p := range clicks(d) {
+		if p.In(entendido) {
+			onButton++
+		}
+	}
+	if onButton != 2 {
+		t.Fatalf("se esperaban 2 clics en Entendido (apertura y reaparicion); clics %v", clicks(d))
+	}
+	if n := len(chat.Requests); n != 6 {
+		t.Fatalf("cerrar el dialogo que reaparece no debe llamar al modelo: %d llamadas", n)
+	}
+	if out.State.Steps != 2 {
+		t.Fatalf("cerrar el dialogo que reaparece no debe consumir pasos: %d pasos", out.State.Steps)
+	}
+	found := false
+	for _, s := range tr.steps {
+		if strings.Contains(s.Reason, "reapareció y se cerró") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("la traza no registra la reaparicion: %+v", tr.steps)
+	}
+	if last := requestText(chat.Requests[5]); !strings.Contains(last, "reapareció") {
+		t.Fatalf("el historial no avisa al modelo:\n%s", last)
+	}
+}
+
 func TestE10_1_S2_EffectDialogIsCancelledNeverConfirmed(t *testing.T) {
 	// Con opcion segura: se cancela, nunca se pulsa 'Eliminar'.
 	cancel := image.Rect(600, 470, 680, 494)

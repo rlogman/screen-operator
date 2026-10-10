@@ -16,12 +16,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image"
 	"strings"
 	"text/template"
 	"unicode"
 
 	"screenoperator/internal/config"
 	"screenoperator/internal/llm"
+	"screenoperator/internal/screen"
 	"screenoperator/internal/trace"
 )
 
@@ -204,6 +206,7 @@ type openingFailure struct {
 func (a *Agent) openingCheck(ctx context.Context) (string, *openingFailure, error) {
 	p := a.Cfg.Dialogs
 	var fingerprint string
+	var pending *knownDialog
 	escaped := false
 	for round := 0; round <= p.MaxOnOpen; round++ {
 		if a.view == nil || a.view.Zoomed {
@@ -242,6 +245,11 @@ func (a *Agent) openingCheck(ctx context.Context) (string, *openingFailure, erro
 			reason := "sin dialogos que bloqueen la app"
 			if round > 0 {
 				reason = "la pantalla principal quedo libre de dialogos"
+			}
+			if pending != nil {
+				// El cierre se confirmo: si el mismo dialogo reaparece durante
+				// la tarea, se cierra en codigo (redismissKnownDialog).
+				a.knownDialog = pending
 			}
 			a.traceStep(trace.Step{Phase: string(PhaseOrient), Action: "revisar apertura: " + truncate(o.AppTitle, 80), Reason: reason}, u, a.Now().Sub(start))
 			return fingerprint, nil, nil
@@ -298,6 +306,10 @@ func (a *Agent) openingCheck(ctx context.Context) (string, *openingFailure, erro
 		a.traceStep(trace.Step{Phase: string(PhaseOrient), Action: fmt.Sprintf("cerrar dialogo: %s %q", act, label),
 			Reason: fmt.Sprintf("%s: %q (boton %q)", what, name, label)}, u, a.Now().Sub(start))
 		a.logInfo(what, "dialogo", name, "boton", label)
+		pending = nil
+		if !dec.Effect {
+			pending = rememberDialog(v, bx, by, x, y, name, label)
+		}
 		if err := a.openingAction(ctx, act, name); err != nil {
 			return fingerprint, nil, err
 		}
@@ -329,4 +341,60 @@ func (a *Agent) openingAction(ctx context.Context, act Action, name string) erro
 	}
 	a.view = nil
 	return err
+}
+
+// knownDialog es un dialogo informativo que se cerro al abrir y cuyo cierre
+// se confirmo. Si reaparece identico en el mismo lugar durante la tarea (en
+// SIGECOM v4.2 el modal de novedades vuelve a salir), se cierra otra vez en
+// codigo, sin gastar pasos ni llamadas al modelo.
+type knownDialog struct {
+	name, label string
+	sx, sy      int             // boton en coordenadas de pantalla
+	rect        image.Rectangle // region de la imagen del modelo alrededor del boton
+	crop        *image.RGBA
+	times       int
+}
+
+// maxRedismiss acota cuantas veces se cierra en codigo el mismo dialogo.
+const maxRedismiss = 8
+
+// redismissTolerance es la fraccion de pixeles distintos tolerada en la region
+// (hover del puntero sobre el boton, cursor).
+const redismissTolerance = 0.12
+
+func rememberDialog(v View, bx, by, sx, sy int, name, label string) *knownDialog {
+	r := image.Rect(bx-200, by-60, bx+200, by+60).Intersect(v.Img.Bounds())
+	if r.Dx() < 80 || r.Dy() < 30 {
+		return nil
+	}
+	crop, err := screen.Zoom(v.Img, r, 1)
+	if err != nil {
+		return nil
+	}
+	return &knownDialog{name: name, label: label, sx: sx, sy: sy, rect: r, crop: crop}
+}
+
+// redismissKnownDialog cierra el dialogo conocido si la vista actual lo
+// muestra otra vez. Devuelve true si hizo clic (la vista queda para recapturar).
+func (a *Agent) redismissKnownDialog(ctx context.Context) bool {
+	k := a.knownDialog
+	if k == nil || k.times >= maxRedismiss || a.view == nil || a.view.Zoomed {
+		return false
+	}
+	if !k.rect.In(a.view.Img.Bounds()) {
+		return false
+	}
+	cur, err := screen.Zoom(a.view.Img, k.rect, 1)
+	if err != nil || screen.DiffFraction(cur, k.crop) > redismissTolerance {
+		return false
+	}
+	k.times++
+	act := Action{Kind: KindClick, X: k.sx, Y: k.sy, Reason: fmt.Sprintf("cerrar dialogo %q que reaparecio", k.name)}
+	a.traceStep(trace.Step{Phase: string(a.st.Phase), Action: fmt.Sprintf("cerrar dialogo: %s %q", act, k.label),
+		Reason: fmt.Sprintf("diálogo informativo reapareció y se cerró: %q (vez %d)", k.name, k.times)}, llm.Usage{}, 0)
+	if err := a.openingAction(ctx, act, k.name); err != nil {
+		return false
+	}
+	a.record(fmt.Sprintf("(dialogo) el diálogo informativo %q reapareció y se cerró con %q; sigue con la tarea", k.name, k.label))
+	return true
 }

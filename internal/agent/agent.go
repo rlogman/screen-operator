@@ -165,7 +165,8 @@ type Agent struct {
 	hasNextXY    bool
 	deadline     time.Time
 	parseErrs    int
-	fingerprint  string // titulo y version leidos en la revision de apertura
+	fingerprint  string       // titulo y version leidos en la revision de apertura
+	knownDialog  *knownDialog // dialogo informativo cerrado al abrir (se vuelve a cerrar si reaparece)
 }
 
 func (a *Agent) init() {
@@ -275,6 +276,11 @@ func (a *Agent) loop(ctx context.Context) Outcome {
 				a.view = nil
 				continue
 			}
+		}
+		// Epica 10: el dialogo informativo que se cerro al abrir volvio a
+		// aparecer igual: se cierra en codigo, sin consumir un paso.
+		if a.redismissKnownDialog(ctx) {
+			continue
 		}
 		st.Steps++
 		startStep := a.Now()
