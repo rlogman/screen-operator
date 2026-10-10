@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"screenoperator/internal/config"
+	"screenoperator/internal/rfb"
 	"screenoperator/internal/screen"
 	"screenoperator/internal/tasks"
 )
@@ -30,6 +31,8 @@ const (
 	DefaultConnectTimeout = 15 * time.Second
 	DefaultSendTimeout    = 3 * time.Second
 	DefaultCloseTimeout   = 3 * time.Second
+	DefaultDialAttempts   = 3
+	DefaultDialRetryWait  = 3 * time.Second
 )
 
 // ErrSendTimeout: el driver no acepto un evento dentro de SendTimeout.
@@ -45,6 +48,8 @@ type DriverDialer struct {
 	ConnectTimeout time.Duration
 	SendTimeout    time.Duration
 	CloseTimeout   time.Duration
+	Attempts       int           // intentos de conexion (por defecto 3; nunca tras auth rechazada)
+	RetryWait      time.Duration // espera entre intentos
 }
 
 // DriverSession implementa tasks.Session sobre un screen.Driver y expone el
@@ -86,6 +91,42 @@ func (dd *DriverDialer) Dial(ctx context.Context, req tasks.Request) (sess tasks
 	}
 	timeout := orDur(dd.ConnectTimeout, DefaultConnectTimeout)
 
+	attempts := dd.Attempts
+	if attempts <= 0 {
+		attempts = DefaultDialAttempts
+	}
+	var last error
+	for i := 0; i < attempts; i++ {
+		if i > 0 {
+			// Tras un /__reset el kiosko reinicia el navegador y el VNC tarda en
+			// aceptar: se reintenta con espera, dentro del plazo de la tarea.
+			t := time.NewTimer(orDur(dd.RetryWait, DefaultDialRetryWait))
+			select {
+			case <-t.C:
+			case <-ctx.Done():
+				t.Stop()
+				return nil, fmt.Errorf("conexion al escritorio cancelada: %w", context.Cause(ctx))
+			}
+		}
+		d, err := dd.attempt(ctx, open, req, surf, timeout)
+		if err == nil {
+			return &DriverSession{d: d, cfg: cfg, surface: surf, perception: perc,
+				sendTimeout: orDur(dd.SendTimeout, DefaultSendTimeout), closeTimeout: orDur(dd.CloseTimeout, DefaultCloseTimeout),
+				scrub: scrub}, nil
+		}
+		if ctx.Err() != nil {
+			return nil, fmt.Errorf("conexion al escritorio cancelada: %w", context.Cause(ctx))
+		}
+		last = err
+		if errors.Is(err, rfb.ErrAuth) {
+			break // una contraseña rechazada no mejora reintentando
+		}
+	}
+	return nil, fmt.Errorf("no se pudo conectar al escritorio %s: %s", tasks.SafeURL(req.DesktopURL), scrub(last.Error()))
+}
+
+// attempt hace un intento de conexion que respeta ctx aunque el driver no lo haga.
+func (dd *DriverDialer) attempt(ctx context.Context, open OpenFunc, req tasks.Request, surf screen.Surface, timeout time.Duration) (screen.Driver, error) {
 	type result struct {
 		d   screen.Driver
 		err error
@@ -102,12 +143,7 @@ func (dd *DriverDialer) Dial(ctx context.Context, req tasks.Request) (sess tasks
 	}()
 	select {
 	case r := <-ch:
-		if r.err != nil {
-			return nil, fmt.Errorf("no se pudo conectar al escritorio %s: %s", tasks.SafeURL(req.DesktopURL), scrub(r.err.Error()))
-		}
-		return &DriverSession{d: r.d, cfg: cfg, surface: surf, perception: perc,
-			sendTimeout: orDur(dd.SendTimeout, DefaultSendTimeout), closeTimeout: orDur(dd.CloseTimeout, DefaultCloseTimeout),
-			scrub: scrub}, nil
+		return r.d, r.err
 	case <-ctx.Done():
 		// El driver que llegue tarde se cierra sin que nadie lo espere.
 		go func() {
@@ -115,7 +151,7 @@ func (dd *DriverDialer) Dial(ctx context.Context, req tasks.Request) (sess tasks
 				_ = r.d.Close()
 			}
 		}()
-		return nil, fmt.Errorf("conexion al escritorio cancelada: %w", context.Cause(ctx))
+		return nil, context.Cause(ctx)
 	}
 }
 

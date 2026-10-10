@@ -11,9 +11,35 @@ import (
 
 	"screenoperator/internal/config"
 	"screenoperator/internal/fakes"
+	"screenoperator/internal/rfb"
 	"screenoperator/internal/screen"
 	"screenoperator/internal/tasks"
 )
+
+// Tras un /__reset el VNC tarda en aceptar: el adaptador reintenta, pero no
+// ante una contraseña rechazada.
+func TestAdapterRetriesDialButNotAuth(t *testing.T) {
+	calls := 0
+	d := fakes.NewDriver(64, 40, color.RGBA{})
+	dd := &DriverDialer{Loader: testLoader(t), RetryWait: 10 * time.Millisecond, Open: func(context.Context, string, string, screen.Surface, time.Duration) (screen.Driver, error) {
+		calls++
+		if calls < 3 {
+			return nil, rfb.ErrTimeout
+		}
+		return d, nil
+	}}
+	if _, err := dd.Dial(context.Background(), req("wss://escritorio.test/websockify", "Pw-retry-8")); err != nil || calls != 3 {
+		t.Fatalf("err=%v intentos=%d", err, calls)
+	}
+	calls = 0
+	dd.Open = func(context.Context, string, string, screen.Surface, time.Duration) (screen.Driver, error) {
+		calls++
+		return nil, rfb.ErrAuth
+	}
+	if _, err := dd.Dial(context.Background(), req("wss://escritorio.test/websockify", "Pw-retry-8")); err == nil || calls != 1 {
+		t.Fatalf("auth rechazada: err=%v intentos=%d", err, calls)
+	}
+}
 
 func testLoader(t *testing.T) *config.Loader {
 	t.Helper()
@@ -32,7 +58,7 @@ func req(url, pw string) tasks.Request {
 func TestAdapterDialRespectsContext(t *testing.T) {
 	release := make(chan struct{})
 	late := fakes.NewDriver(64, 40, color.RGBA{})
-	dd := &DriverDialer{Loader: testLoader(t), Open: func(ctx context.Context, _, _ string, _ screen.Surface, _ time.Duration) (screen.Driver, error) {
+	dd := &DriverDialer{Loader: testLoader(t), RetryWait: 10 * time.Millisecond, Open: func(ctx context.Context, _, _ string, _ screen.Surface, _ time.Duration) (screen.Driver, error) {
 		<-release // un driver que ignora ctx
 		return late, nil
 	}}
@@ -61,7 +87,7 @@ func TestAdapterDialRespectsContext(t *testing.T) {
 func TestAdapterSendAndCloseDoNotHang(t *testing.T) {
 	d := fakes.NewDriver(1280, 800, color.RGBA{})
 	d.BlockInput = make(chan struct{}) // nunca se libera: Pointer/Key bloquean
-	dd := &DriverDialer{Loader: testLoader(t), SendTimeout: 100 * time.Millisecond, CloseTimeout: 100 * time.Millisecond,
+	dd := &DriverDialer{Loader: testLoader(t), RetryWait: 10 * time.Millisecond, SendTimeout: 100 * time.Millisecond, CloseTimeout: 100 * time.Millisecond,
 		Open: func(context.Context, string, string, screen.Surface, time.Duration) (screen.Driver, error) {
 			return d, nil
 		}}
@@ -94,7 +120,7 @@ func TestAdapterSendAndCloseDoNotHang(t *testing.T) {
 	// mutex durante Send, pero Send esta acotado).
 	d2 := fakes.NewDriver(1280, 800, color.RGBA{})
 	d2.BlockInput = make(chan struct{})
-	dd2 := &DriverDialer{Loader: testLoader(t), SendTimeout: 150 * time.Millisecond, CloseTimeout: 150 * time.Millisecond,
+	dd2 := &DriverDialer{Loader: testLoader(t), RetryWait: 10 * time.Millisecond, SendTimeout: 150 * time.Millisecond, CloseTimeout: 150 * time.Millisecond,
 		Open: func(context.Context, string, string, screen.Surface, time.Duration) (screen.Driver, error) {
 			return d2, nil
 		}}
@@ -133,7 +159,7 @@ func (panicDriver) Pointer(int, int, uint8) error { panic("boom pointer") }
 
 // Arrastre so-epic-3 (3): panic del driver en Dial, Send o Close = error.
 func TestAdapterRecoversDriverPanics(t *testing.T) {
-	dd := &DriverDialer{Loader: testLoader(t), Open: func(context.Context, string, string, screen.Surface, time.Duration) (screen.Driver, error) {
+	dd := &DriverDialer{Loader: testLoader(t), RetryWait: 10 * time.Millisecond, Open: func(context.Context, string, string, screen.Surface, time.Duration) (screen.Driver, error) {
 		panic("boom dial")
 	}}
 	if _, err := dd.Dial(context.Background(), req("wss://escritorio.test/websockify", "Pw-panic-4")); err == nil || !strings.Contains(err.Error(), "panic") {
@@ -159,7 +185,7 @@ func TestAdapterRecoversDriverPanics(t *testing.T) {
 // (usuario:clave@, query) ni la contraseña.
 func TestAdapterErrorsHideRawURL(t *testing.T) {
 	raw := "wss://operador:Clave-URL-55@escritorio.test/websockify?token=Tk-query-66"
-	dd := &DriverDialer{Loader: testLoader(t), Open: func(_ context.Context, u, pw string, _ screen.Surface, _ time.Duration) (screen.Driver, error) {
+	dd := &DriverDialer{Loader: testLoader(t), RetryWait: 10 * time.Millisecond, Open: func(_ context.Context, u, pw string, _ screen.Surface, _ time.Duration) (screen.Driver, error) {
 		return nil, fmt.Errorf("fallo al abrir %s con %s", u, pw)
 	}}
 	_, err := dd.Dial(context.Background(), req(raw, "Pw-secreta-77"))

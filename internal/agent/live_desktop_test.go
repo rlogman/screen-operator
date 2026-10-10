@@ -84,7 +84,7 @@ func setup(t *testing.T) *liveEnv {
 	if err := desk.Reset(ctx); err != nil {
 		t.Fatalf("/__reset: %v", err)
 	}
-	time.Sleep(5 * time.Second) // el navegador del kiosko se reinicia
+	time.Sleep(10 * time.Second) // el navegador del kiosko se reinicia
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
