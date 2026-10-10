@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"screenoperator/internal/tasks"
 	"strings"
 	"testing"
 	"time"
@@ -18,7 +19,7 @@ func submitAndWait(t *testing.T, ln *memListener) string {
 	t.Helper()
 	c := ln.client()
 	req, _ := http.NewRequest(http.MethodPost, "http://agent/tasks",
-		strings.NewReader(`{"tarea":"x","escritorio":{"url":"wss://h/websockify","password":"Pw-trace-91"}}`))
+		strings.NewReader(`{"tarea":"x","escritorio":{"url":"ws://127.0.0.1:1/websockify","password":"Pw-trace-91"}}`))
 	req.Header.Set("Authorization", "Bearer t0k")
 	resp, err := c.Do(req)
 	if err != nil {
@@ -49,8 +50,10 @@ func submitAndWait(t *testing.T, ln *memListener) string {
 	}
 }
 
-// El agente real conecta SO_TRACE_DIR al Task Manager: el runner provisional
-// deja su paso en traces/<task_id>/steps.jsonl y en /tasks/{id}/metrics.
+// El agente real conecta SO_TRACE_DIR al Task Manager: una tarea cuyo escritorio
+// no responde deja el paso de conexion fallida en traces/<task_id>/steps.jsonl y
+// en /tasks/{id}/metrics (antes lo dejaba el runner provisional, retirado en la
+// epica 6).
 func TestE5_6_S1_AgentWritesTraceWithTraceDir(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "traces")
 	_, ln, _, stop := startAgent(t, map[string]string{"TEAM_TOKEN": "t0k", "SO_TRACE_DIR": dir})
@@ -60,7 +63,7 @@ func TestE5_6_S1_AgentWritesTraceWithTraceDir(t *testing.T) {
 	if err != nil {
 		t.Fatalf("falta steps.jsonl: %v", err)
 	}
-	if strings.Count(string(b), "\n") != 1 || !strings.Contains(string(b), ProvisionalSummary) {
+	if strings.Count(string(b), "\n") != 1 || !strings.Contains(string(b), tasks.SummaryDialFail) {
 		t.Fatalf("steps.jsonl = %s", b)
 	}
 	if strings.Contains(string(b), "Pw-trace-91") || strings.Contains(string(b), "t0k") {

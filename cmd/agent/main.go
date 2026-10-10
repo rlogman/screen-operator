@@ -4,9 +4,11 @@
 // mas el overlay de SO_CONFIG_OVERLAY). Si falla, termina con codigo 1. Exige
 // TEAM_TOKEN (contract.auth.token_env) y escucha en :PORT (8080 por defecto).
 //
-// Mientras el nucleo del agente no existe (epica 6), cada tarea termina
-// "fallida" con el resumen "agente en construcción", asi el despliegue ya
-// cumple el contrato.
+// Cada tarea la ejecuta el agente real (internal/agent): el DriverDialer abre la
+// sesion RFB del escritorio que llega en POST /tasks y el Runner corre el loop
+// por fases con el modelo de models.roles (OpenRouter, OPENROUTER_API_KEY).
+// Sin OPENROUTER_API_KEY el agente arranca igual (el contrato responde) pero
+// cada tarea termina "fallida" sin tocar el escritorio, y se avisa en el log.
 package main
 
 import (
@@ -24,8 +26,11 @@ import (
 	"syscall"
 	"time"
 
+	"screenoperator/internal/agent"
 	"screenoperator/internal/api"
 	"screenoperator/internal/config"
+	"screenoperator/internal/guard"
+	"screenoperator/internal/llm"
 	"screenoperator/internal/tasks"
 	"screenoperator/internal/trace"
 )
@@ -39,8 +44,6 @@ const (
 	DefaultPort = "8080"
 )
 
-// ProvisionalSummary es el resumen del runner provisional.
-const ProvisionalSummary = "agente en construcción"
 
 // listenFunc abre el listener; los tests lo reemplazan (el sandbox no deja bindear).
 type listenFunc func(network, addr string) (net.Listener, error)
@@ -110,7 +113,8 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout,
 		return 1
 	}
 	mgr := tasks.NewManager(tasks.Options{
-		Runner:   provisionalRunner(),
+		Runner:   &agent.Runner{Loader: loader, Getenv: getenv, NewGuard: guard.New},
+		Dialer:   &agent.DriverDialer{Loader: loader},
 		Budget:   budget,
 		Logger:   log,
 		Redactor: red,
@@ -127,6 +131,13 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout,
 	if err != nil {
 		fmt.Fprintf(stderr, "agent: no se pudo escuchar en %s: %v\n", addr, err)
 		return 1
+	}
+	if models, err := llm.ModelsFromConfig(cfg); err != nil {
+		fmt.Fprintln(stderr, "agent:", err)
+		return 1
+	} else if strings.TrimSpace(getenv(models.APIKeyEnv)) == "" {
+		log.Warn("falta la clave del modelo: las tareas terminaran fallidas sin tocar el escritorio",
+			tasks.LogKeyPhase, "arranque", "variable", models.APIKeyEnv)
 	}
 	hs := &http.Server{Handler: srv, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second}
 	log.Info("agente escuchando", tasks.LogKeyPhase, "arranque", "addr", addr,
@@ -202,13 +213,4 @@ func budgetFrom(cfg *config.Config) (tasks.Budget, error) {
 		return tasks.Budget{}, err
 	}
 	return tasks.Budget{Total: time.Duration(b.Total) * time.Second, Margin: time.Duration(b.Margin) * time.Second}, nil
-}
-
-// provisionalRunner termina cada tarea como fallida hasta que exista el agente.
-func provisionalRunner() tasks.Runner {
-	return tasks.RunnerFunc(func(_ context.Context, job *tasks.Job) tasks.Result {
-		job.Log.Info("runner provisional", tasks.LogKeyPhase, "agente")
-		_ = job.Trace.Step(trace.Step{Phase: "agente", Action: "reportar fallida", Reason: ProvisionalSummary})
-		return tasks.Result{Status: tasks.StatusFailed, Summary: ProvisionalSummary}
-	})
 }

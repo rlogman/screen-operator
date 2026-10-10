@@ -246,13 +246,17 @@ func (m *Manager) work(ctx context.Context, cancel context.CancelCauseFunc, t *t
 	if m.o.Dialer != nil {
 		t.log.Info("conectando al escritorio", LogKeyPhase, "conexion")
 		var err error
-		sess, err = m.o.Dialer.Dial(ctx, t.req)
+		sess, err = safeDial(ctx, m.o.Dialer, t.req)
 		if err != nil {
 			if ctx.Err() != nil {
 				m.finish(t, causeResult(ctx), start)
 				return
 			}
 			t.log.Warn("no se pudo conectar", LogKeyPhase, "conexion", "error", err)
+			// La conexion fallida tambien queda en la traza y en las metricas.
+			rec := m.recorder(t)
+			_ = rec.Step(trace.Step{Phase: "conexion", Action: "conectar al escritorio", Reason: SummaryDialFail})
+			_ = rec.Close()
 			m.finish(t, Result{Status: StatusFailed, Summary: SummaryDialFail}, start)
 			return
 		}
@@ -262,6 +266,9 @@ func (m *Manager) work(ctx context.Context, cancel context.CancelCauseFunc, t *t
 	// 3. Ejecutar el agente. Un panic se convierte en fallida generica.
 	rec := m.recorder(t)
 	job := &Job{ID: t.id, Request: t.req, Input: gate, Log: t.log, Usage: t.usage, Trace: rec}
+	if m.o.Dialer != nil {
+		job.Session = sess
+	}
 	resCh := make(chan Result, 1)
 	go func() {
 		defer func() {
@@ -287,12 +294,43 @@ func (m *Manager) work(ctx context.Context, cancel context.CancelCauseFunc, t *t
 	if err := rec.Close(); err != nil {
 		t.log.Warn("error al cerrar la traza", LogKeyPhase, "cierre", "error", err)
 	}
-	if err := sess.Close(); err != nil {
+	if err := safeClose(sess); err != nil {
 		t.log.Warn("error al cerrar la sesion", LogKeyPhase, "cierre", "error", err)
 	}
 	sent, denied := gate.Counts()
 	t.log.Info("sesion cerrada", LogKeyPhase, "cierre", "eventos_enviados", sent, "eventos_rechazados", denied)
 	m.finish(t, res, start)
+}
+
+// errDialPanic y errClosePanic reemplazan un panic del driver: el stack no sale
+// a la respuesta y la tarea termina con un estado definido.
+var (
+	errDialPanic  = errors.New("panic al conectar con el escritorio")
+	errClosePanic = errors.New("panic al cerrar la sesion del escritorio")
+)
+
+// safeDial llama al Dialer convirtiendo un panic en error (carryover so-epic-3).
+func safeDial(ctx context.Context, d Dialer, req Request) (s Session, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			s, err = nil, errDialPanic
+		}
+	}()
+	s, err = d.Dial(ctx, req)
+	if err == nil && s == nil {
+		err = errors.New("el dialer no devolvio sesion")
+	}
+	return s, err
+}
+
+// safeClose cierra la sesion convirtiendo un panic en error.
+func safeClose(s Session) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = errClosePanic
+		}
+	}()
+	return s.Close()
 }
 
 // recorder crea la traza de la tarea. Cada paso suma en el Usage de la tarea.

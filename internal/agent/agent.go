@@ -144,6 +144,7 @@ type Agent struct {
 	hints     string
 	view      *View // imagen actual del modelo (nil = capturar de nuevo)
 	full      *screen.ModelShot
+	stable    bool // la vista actual salio de una captura estable
 	deadline  time.Time
 	parseErrs int
 }
@@ -221,7 +222,7 @@ func (a *Agent) loop(ctx context.Context) Outcome {
 		if ctx.Err() != nil || (!a.deadline.IsZero() && time.Until(a.deadline) < time.Second) {
 			return a.fail(ctx, ReasonTimeout, nil)
 		}
-		if a.view == nil {
+		if a.view == nil || !a.stable {
 			stable, err := a.stableCapture(ctx)
 			if err != nil {
 				if ctx.Err() != nil {
@@ -328,6 +329,7 @@ func (a *Agent) stableCapture(ctx context.Context) (bool, error) {
 		}
 	}
 	a.setFull(out.Screen)
+	a.stable = out.Stable
 	return out.Stable, nil
 }
 
@@ -675,6 +677,7 @@ func (a *Agent) doScreenAction(ctx context.Context, act Action) error {
 	a.record(fmt.Sprintf("%d. [%s] %s%s → %s", st.Steps, st.Phase, act, reason, result))
 	if out.Stable && out.Screen != nil {
 		a.setFull(out.Screen)
+		a.stable = true
 	} else {
 		a.view = nil // carryover epica 2: recapturar antes de decidir
 	}
