@@ -739,6 +739,74 @@
           ]
         }
       ]
+    },
+    {
+      "id": "10",
+      "title": "Incidente FR-0153: la app cambió de tema",
+      "description": "15:30 BOG: el cliente actualizó la app de pruebas a un tema nuevo (SIGECOM v4.2): botones movidos, etiquetas distintas y un modal nuevo al abrir la app. El agente debe detectar el cambio, adaptarse y seguir completando tareas; el set oculto corre sobre el tema nuevo. Se evalúa en 'Respuesta al incidente': detectar, adaptar y explicar.",
+      "user_stories": [
+        {
+          "id": "10.1",
+          "title": "Diálogos al abrir la app",
+          "description": "La orientación detecta modales o diálogos que bloquean la app y los cierra solo si son informativos; nunca acepta acciones con efecto sin que la tarea lo pida.",
+          "complexity": "Medium",
+          "implementation_order": 40,
+          "acceptance_criteria": [
+            "Given una captura inicial con un modal informativo (título y un botón 'Aceptar' o 'Cerrar') When el agente orienta Then cierra el modal antes de cualquier otra acción y la traza registra 'diálogo informativo cerrado' [E10.1-S1]",
+            "Given un modal que pide confirmar una acción con efecto (por ejemplo 'Eliminar', 'Confirmar pago' o 'Aceptar cambios') que la tarea no pidió When el agente orienta Then no lo confirma, lo cierra o cancela si hay una opción segura y, si no la hay, la tarea termina 'fallida' nombrando el diálogo [E10.1-S2]",
+            "Given el escritorio real con SIGECOM v4.2 recién reseteado (build tag desktop) When se ejecuta la orientación Then el modal nuevo queda cerrado y la captura siguiente muestra la pantalla principal [E10.1-S3]"
+          ],
+          "technical_notes": [
+            "Genérico: nada de textos ni coordenadas de SIGECOM en código.",
+            "Validate L1: go build ./... && go vet ./..."
+          ]
+        },
+        {
+          "id": "10.2",
+          "title": "Detección del cambio de app y adaptación por configuración",
+          "description": "El agente compara la huella de la app (título, versión visible, menús) con el perfil; si no coincide, descarta las pistas del perfil y sigue en modo genérico, y lo deja registrado. El perfil de SIGECOM se actualiza al tema nuevo solo editando configuración.",
+          "complexity": "Medium",
+          "implementation_order": 41,
+          "acceptance_criteria": [
+            "Given un perfil de app con match por texto 'SIGECOM' y versión esperada 'v3.9' y una pantalla que muestra 'SIGECOM · Distribuidora Andina v4.2' When se resuelve el perfil Then las pistas del perfil no se usan, la traza y el log registran 'cambio de app detectado: v3.9 -> v4.2' y la tarea sigue en modo genérico [E10.2-S1]",
+            "Given config/apps/sigecom.yaml actualizado a v4.2 con las etiquetas nuevas When se valida la configuración Then pasa la validación estricta y el diff del cambio de tema toca solo archivos de config/ [E10.2-S2]",
+            "Given el perfil v4.2 y la pantalla v4.2 When se resuelve el perfil Then se usan sus pistas [E10.2-S3]"
+          ],
+          "technical_notes": [
+            "El esquema puede necesitar un campo de versión en app.match: agregarlo a config/schema.json con su test.",
+            "Validate L1: go build ./... && go vet ./..."
+          ]
+        },
+        {
+          "id": "10.3",
+          "title": "Medición sobre el tema nuevo",
+          "description": "Actualizar los tests de escritorio que dependían de coordenadas o etiquetas de v3.9 y medir con el harness los oficiales y el corpus sobre v4.2, en modo genérico.",
+          "complexity": "Medium",
+          "implementation_order": 42,
+          "acceptance_criteria": [
+            "Given los tests con build tag desktop When se corren con make test-desktop sobre v4.2 Then pasan, y ninguno depende de coordenadas fijas sin un default actualizado a v4.2 [E10.3-S1]",
+            "Given el harness con SO_DISABLE_APP_PROFILES=1 When se corren material/pruebas/*.json y cases/*.json una vez sobre v4.2 Then runs/<fecha>/report.md existe y docs/incidente-FR-0153.md enlaza ese reporte [E10.3-S2]",
+            "Given los casos del corpus When se revisan contra v4.2 Then los que dependían del tema viejo (etiquetas en la instrucción o evidencias) quedan actualizados o marcados, y los datos esperados siguen verificados [E10.3-S3]"
+          ],
+          "technical_notes": [
+            "Todo uso del escritorio con scripts/with_desktop.sh.",
+            "Validate L1: go build ./... && go vet ./..."
+          ]
+        },
+        {
+          "id": "10.4",
+          "title": "Explicación del incidente",
+          "description": "Documento para el video y el debrief.",
+          "complexity": "Low",
+          "implementation_order": 43,
+          "acceptance_criteria": [
+            "Given docs/incidente-FR-0153.md When se lee Then explica qué cambió (con capturas antes y después), cómo lo detectó el agente, qué se cambió en configuración y qué en código, y la medición antes y después del cambio [E10.4-S1]"
+          ],
+          "technical_notes": [
+            "Validate L1: go build ./... && go vet ./..."
+          ]
+        }
+      ]
     }
   ]
 }

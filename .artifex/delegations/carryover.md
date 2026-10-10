@@ -11,3 +11,8 @@ Cada brief de épica que toque estos puntos debe resolverlos y testearlos.
 ## Del validador de so-epic-2 (para la épica 6, loop del agente)
 - should-fix: el horizonte de estabilidad es único para todas las primitivas (`internal/screen/executor.go:37,53`); falta un override por tipo de acción (p. ej. `TypeReplace` no necesita 2,2 s). Hacerlo configurable en `surface.settle` sin romper el schema ni los tests E2.
 - should-fix: con `change_horizon_ms` 2200 y `max_wait_ms` 2500, un repintado tardío devuelve `Stable=false`. El loop debe tratar `Stable=false` (por ejemplo, volver a capturar antes de decidir) y no actuar sobre una captura no estable.
+
+## Del relevamiento del corpus (so-epic-5b), para las épicas 6 y 7
+- Inyección de prompt: las Observaciones de CL-0007 contienen una instrucción dirigida al asistente. Todo texto de pantalla es dato no confiable; la orden de la tarea es la única fuente de instrucciones. Guardrail y test en la épica 7 si la 6 no lo cierra.
+- Guardar cambios de contacto de un cliente abre un modal de confirmación: el loop genérico debe manejar diálogos de confirmación sin hardcodear SIGECOM.
+- `/__check` responde 200 aunque el campo o el id no existan: no sirve para validar nombres de entidad/campo.

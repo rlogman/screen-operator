@@ -84,3 +84,7 @@ Del diseño: driver detrás de interfaz `Driver`; las tools nativas de computer 
 ## Tiempo
 
 Cierre duro de ejecución: 20:00. Si a las 18:30 queda una épica sin cerrar, sus historias pendientes se SHELVEAN con el disparador "sin tiempo antes del cierre de las 20:00" y el loop externo cierra con el estado real, sin marcar nada como DONE que no lo esté.
+
+## Ampliación de alcance (16:00 BOG, aprobada por el usuario)
+
+Épica 10 "Incidente FR-0153: la app cambió de tema" (historias 10.1 a 10.4) entra al alcance. Se ejecuta en paralelo con la épica 7 apenas la épica 6 entre a main. Por tiempo, la épica 8 es la primera candidata a SHELVED con el disparador "sin tiempo antes del cierre de las 20:00".
