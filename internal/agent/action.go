@@ -177,7 +177,7 @@ func (a Action) String() string {
 		r := a.Region
 		return fmt.Sprintf("zoom(%d,%d,%d,%d)", r.Min.X, r.Min.Y, r.Dx(), r.Dy())
 	case KindExtract:
-		return fmt.Sprintf("extract(%q, clave=%s)", a.What, a.KeyCol)
+		return fmt.Sprintf("extract(%q, columna_id=%s)", a.What, a.KeyCol)
 	case KindCommit:
 		return fmt.Sprintf("commit(%d,%d, %q, objetivo=%s)", a.X, a.Y, a.What, a.Target)
 	case KindFinish:

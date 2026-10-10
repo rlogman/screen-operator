@@ -294,3 +294,70 @@ func TestE7_3_S4_ClickOnCommitLabelIsCommit(t *testing.T) {
 		t.Fatalf("commits %d, clics %d", len(out.State.Commits), clicksAt(d, 600, 700))
 	}
 }
+
+// La busqueda previa de duplicados exige una lectura "candidatos" completa
+// tomada despues de escribir el identificador en el filtro.
+func TestE7_3_S1_PreCreateSearchMustBeFilteredAndComplete(t *testing.T) {
+	newS := func() *agent.State {
+		return st("Registra al cliente Papelería Los Andes, NIT 901234567.", agent.IntentCreate, "Papelería Los Andes",
+			map[string]string{"nombre": "Papelería Los Andes", "nit": "901234567"})
+	}
+	cols := []string{"Código", "Nombre", "NIT"}
+	typeID := agent.Action{Kind: agent.KindType, Phase: agent.PhaseLocate, Text: "901234567", Replace: true}
+	save := commit("901234567", "Guardar cliente")
+
+	// Solo tipeado, sin lectura: bloqueado (y sigue bloqueado al reintentar).
+	s, g := newS(), New().(*Guard)
+	g.BeforeAction(s, typeID)
+	for i := 0; i < 2; i++ {
+		if d := g.BeforeAction(s, save); !d.Deny || !strings.Contains(d.Reason, "candidatos") {
+			t.Fatalf("intento %d: commit sin lectura permitido: %+v", i+1, d)
+		}
+	}
+
+	// Una pagina cualquiera leida (sin filtrar por el NIT): bloqueado.
+	s, g = newS(), New().(*Guard)
+	g.ObservePage(s, extract("candidatos", "Código", nil), page(cols, []string{"CL-0001", "Otra", "800111222"}))
+	if d := g.BeforeAction(s, save); !d.Deny {
+		t.Fatal("commit con una lectura sin filtrar permitido")
+	}
+
+	// Lectura antes de tipear el NIT: no cuenta.
+	s, g = newS(), New().(*Guard)
+	g.ObservePage(s, extract("candidatos", "Código", nil), page(cols))
+	g.BeforeAction(s, typeID)
+	if d := g.BeforeAction(s, save); !d.Deny {
+		t.Fatal("lectura anterior al filtro aceptada")
+	}
+
+	// NIT escrito en el formulario (fase actuar), no en el filtro: no cuenta.
+	s, g = newS(), New().(*Guard)
+	g.BeforeAction(s, agent.Action{Kind: agent.KindType, Phase: agent.PhaseAct, Text: "901234567", Replace: true})
+	g.ObservePage(s, extract("candidatos", "Código", nil), page(cols))
+	if d := g.BeforeAction(s, save); !d.Deny {
+		t.Fatal("NIT del formulario tomado como busqueda")
+	}
+
+	// Lectura filtrada pero incompleta (pagina 1 de 2): bloqueado.
+	s, g = newS(), New().(*Guard)
+	g.BeforeAction(s, typeID)
+	g.ObservePage(s, extract("candidatos", "Código", nil), agent.Page{Columns: cols, Indicator: "Página 1 de 2"})
+	if d := g.BeforeAction(s, save); !d.Deny {
+		t.Fatal("busqueda incompleta aceptada")
+	}
+
+	// Filtro escrito + lectura candidatos completa sin resultados: permitido.
+	s, g = newS(), New().(*Guard)
+	g.BeforeAction(s, typeID)
+	g.ObservePage(s, extract("candidatos", "Código", nil), page(cols))
+	if d := g.BeforeAction(s, save); d.Deny {
+		t.Fatalf("busqueda completa bloqueada: %s", d.Reason)
+	}
+
+	// Identificador en los filtros de la extraccion: tambien vale.
+	s, g = newS(), New().(*Guard)
+	g.ObservePage(s, extract("candidatos", "Código", map[string]string{"NIT": "901234567"}), page(cols))
+	if d := g.BeforeAction(s, save); d.Deny {
+		t.Fatalf("busqueda con filtro en la extraccion bloqueada: %s", d.Reason)
+	}
+}

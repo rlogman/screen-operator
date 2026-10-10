@@ -71,3 +71,18 @@ func TestE7_5_S4_CleanSummaryUnchanged(t *testing.T) {
 		t.Fatalf("cambió un resumen sin secretos:\n%q\n%q", in, got)
 	}
 }
+
+// La traza nombra la columna clave de una extraccion; el nombre de la
+// columna no es un secreto y no se redacta. Un "clave: valor" real si.
+func TestE7_5_S4_KeyColumnNameNotRedacted(t *testing.T) {
+	g := ForTask(func(string) string { return "" })(testConfig(t), nil).(*Guard)
+	line := extract("datos", "Código", nil)
+	line.What = "resultados"
+	got := g.Redact(line.String())
+	if strings.Contains(got, "[redactado]") || !strings.Contains(got, "Código") {
+		t.Fatalf("traza = %q", got)
+	}
+	if got := g.Redact("Clave de integración: SGC-99887766"); strings.Contains(got, "SGC-99887766") {
+		t.Fatalf("secreto real sin redactar: %q", got)
+	}
+}

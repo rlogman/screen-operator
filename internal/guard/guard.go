@@ -73,6 +73,8 @@ type obs struct {
 type typedText struct {
 	text  string
 	phase agent.Phase
+	seq   int // commits enviados antes de escribirlo
+	at    int // lecturas hechas antes de escribirlo (indice en pages)
 }
 
 type commitState struct {
@@ -223,7 +225,7 @@ func (g *Guard) BeforeAction(st *agent.State, a agent.Action) agent.Decision {
 		if d := g.typeProvenance(st, a, ph); d.Deny {
 			return d
 		}
-		g.typed = append(g.typed, typedText{text: a.Text, phase: ph})
+		g.typed = append(g.typed, typedText{text: a.Text, phase: ph, seq: g.seq, at: len(g.pages)})
 		return agent.Allow
 	}
 	isCommit := a.Kind == agent.KindCommit
@@ -285,9 +287,8 @@ func (g *Guard) BeforeAction(st *agent.State, a agent.Action) agent.Decision {
 				return agent.Fail(uniq([]string{code, id}), "ya existe un registro con %s: %s; no se creó otro", id, code)
 			}
 		}
-		if len(ids) > 0 && !g.searched(ids) && !g.warned["create-search"] {
-			g.warned["create-search"] = true
-			return agent.Deny("antes de crear, busca en la lista el identificador %s y usa extract con purpose candidatos: si ya existe, no se crea", ids[0])
+		if len(ids) > 0 && !g.searched(ids) {
+			return agent.Deny("antes de crear, escribe el identificador %s en el filtro de la lista y usa extract con purpose candidatos sobre los resultados, en todas las páginas: si ya existe, no se crea", ids[0])
 		}
 	}
 
@@ -686,17 +687,100 @@ func rowCode(r agent.Row, id string) string {
 	return id
 }
 
-// searched dice si la tarea busco alguno de los identificadores antes de crear.
+// searched dice si la tarea busco alguno de los identificadores antes de
+// crear: una lectura "candidatos" completa (todas las paginas), anterior a
+// cualquier commit, tomada despues de escribir el identificador en el filtro
+// (o con el identificador entre los filtros de la extraccion). Haberlo
+// tipeado o haber leido cualquier pagina no basta.
 func (g *Guard) searched(ids []string) bool {
-	for _, t := range g.typed {
-		for _, id := range ids {
-			if t.phase != agent.PhaseAct && strings.Contains(digits(t.text), digits(id)) && digits(id) != "" {
+	_, found, why := g.idRun(ids, false)
+	return found && why == ""
+}
+
+// idMatch dice si un texto escrito o un filtro corresponde al identificador:
+// por digitos para NIT/documentos (con o sin DV), si no por texto.
+func idMatch(text, id string) bool {
+	t, id := strings.TrimSpace(text), strings.TrimSpace(id)
+	if t == "" || id == "" {
+		return false
+	}
+	if d := digits(id); len(d) >= 6 {
+		td := digits(t)
+		return len(td) >= len(d) && strings.Contains(td, d)
+	}
+	ft, fi := fold(t), fold(id)
+	return strings.Contains(ft, fi) || (len([]rune(ft)) >= 4 && strings.Contains(fi, ft))
+}
+
+// filteredBy dice si la lectura i es de la lista filtrada por el identificador:
+// el identificador esta entre sus filtros o se escribio antes de la lectura y
+// despues del mismo numero de commits (antes del primer commit, fuera de la
+// fase actuar, que es la del formulario).
+func (g *Guard) filteredBy(i int, ids []string) bool {
+	o := g.pages[i]
+	for _, id := range ids {
+		for _, v := range o.filters {
+			if idMatch(v, id) {
 				return true
 			}
-			if t.phase != agent.PhaseAct && strings.EqualFold(strings.TrimSpace(t.text), id) {
+		}
+		for _, t := range g.typed {
+			if t.at > i || t.seq != o.after {
+				continue
+			}
+			if o.after == 0 && t.phase == agent.PhaseAct {
+				continue
+			}
+			if idMatch(t.text, id) {
 				return true
 			}
 		}
 	}
-	return len(g.pages) > 0
+	return false
+}
+
+// idRun devuelve las filas de la ultima busqueda por identificador: la
+// ultima racha contigua de lecturas "candidatos" de la lista filtrada por el
+// identificador, antes del primer commit (post=false) o despues del ultimo
+// (post=true). found=false si no hay ninguna; why no vacio si la racha no
+// cubre todas las paginas.
+func (g *Guard) idRun(ids []string, post bool) (rows []agent.Row, found bool, why string) {
+	inWindow := func(o obs) bool {
+		if post {
+			return g.seq > 0 && o.after >= g.seq
+		}
+		return o.after == 0
+	}
+	last := -1
+	for i := len(g.pages) - 1; i >= 0; i-- {
+		o := g.pages[i]
+		if o.purpose == "candidatos" && inWindow(o) && g.filteredBy(i, ids) {
+			last = i
+			break
+		}
+	}
+	if last < 0 {
+		return nil, false, ""
+	}
+	ref := g.pages[last]
+	first := last
+	for j := last - 1; j >= 0; j-- {
+		o := g.pages[j]
+		if o.purpose != "candidatos" || !inWindow(o) || !strings.EqualFold(o.key, ref.key) ||
+			fmt.Sprint(o.filters) != fmt.Sprint(ref.filters) || !g.filteredBy(j, ids) {
+			break
+		}
+		first = j
+	}
+	run := g.pages[first : last+1]
+	seen := map[string]bool{}
+	for _, o := range run {
+		for _, r := range o.page.Rows {
+			if k := rowSig(r, ""); !seen[k] {
+				seen[k] = true
+				rows = append(rows, r)
+			}
+		}
+	}
+	return rows, true, runGap(run)
 }

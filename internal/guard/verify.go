@@ -1,9 +1,10 @@
 package guard
 
 // 7.4: el estado final lo decide la verificacion en codigo. La relectura
-// viene de las paginas extraidas despues del ultimo commit (lector aparte) o,
-// para una edicion sin extraccion, de la evidencia que el modelo leyo en
-// pantalla. Comparacion exacta salvo espacios extremos.
+// viene solo de las paginas extraidas despues del ultimo commit (lector
+// aparte); la evidencia que escribe el modelo nunca basta para dar una
+// edicion o una creacion por verificada. Comparacion exacta salvo espacios
+// extremos.
 
 import (
 	"fmt"
@@ -43,8 +44,14 @@ func (g *Guard) ReviewFinish(st *agent.State, f *agent.FinishRequest) string {
 	}
 	switch c.Intent {
 	case agent.IntentCreate:
-		if !g.readAfterCommit() {
-			return once("read", "Para verificar la creación, busca el registro por su identificador y usa extract con purpose candidatos sobre los resultados: el código exige exactamente uno.")
+		ids := createIDs(c)
+		if _, found, why := g.idRun(ids, true); !found || why != "" {
+			id := strings.Join(ids, ", ")
+			return once("read", "Para verificar la creación, vuelve a la lista, escribe el identificador "+id+" en el filtro y usa extract con purpose candidatos sobre los resultados, en todas las páginas (la ficha del registro no sirve): el código exige exactamente un registro con ese identificador.")
+		}
+	case agent.IntentEdit:
+		if _, _, ok := g.verifyEdit(st, nil); !ok {
+			return once("read", "Para verificar la edición, vuelve a abrir el registro y usa extract con purpose datos sobre la ficha o la lista: el código compara lo leído con la orden (la evidencia escrita no basta).")
 		}
 	case agent.IntentExport:
 		if !g.readAfterCommit() {
@@ -100,7 +107,7 @@ func (g *Guard) BeforeFinish(st *agent.State, f *agent.FinishRequest) agent.Deci
 	case agent.IntentEdit:
 		res, why, ok := g.verifyEdit(st, f)
 		if !ok {
-			return agent.Deny("no se pudo leer el registro para verificar el cambio; no se da por terminada")
+			return agent.Deny("no se pudo releer el registro para verificar el cambio (la evidencia escrita no basta); no se da por terminada")
 		}
 		if res != "ok" {
 			return agent.Deny("la verificación no coincide: %s", why)
@@ -146,16 +153,14 @@ func (g *Guard) postRows() ([]agent.Row, [][]string) {
 	return rows, cols
 }
 
-// verifyEdit compara cada valor pedido con lo leido despues del commit.
-// res: "ok" o "fallo"; ok=false si no hubo nada que leer.
-func (g *Guard) verifyEdit(st *agent.State, f *agent.FinishRequest) (res, why string, ok bool) {
+// verifyEdit compara cada valor pedido con lo releido en codigo despues del
+// commit. res: "ok" o "fallo"; ok=false si no se releyo ningun valor pedido.
+// La evidencia escrita por el modelo no se usa: sin relectura no hay
+// verificacion.
+func (g *Guard) verifyEdit(st *agent.State, _ *agent.FinishRequest) (res, why string, ok bool) {
 	c := st.Class
 	rows, cols := g.postRows()
-	evidence := ""
-	if f != nil {
-		evidence = strings.TrimSpace(f.Evidence)
-	}
-	if len(rows) == 0 && evidence == "" {
+	if len(rows) == 0 {
 		return "", "", false
 	}
 	checked := 0
@@ -175,23 +180,10 @@ func (g *Guard) verifyEdit(st *agent.State, f *agent.FinishRequest) (res, why st
 			if strings.TrimSpace(got) != want {
 				bad = append(bad, fmt.Sprintf("%s: esperado %q, leído %q", field, want, strings.TrimSpace(got)))
 			}
-			continue
-		}
-		if evidence != "" {
-			checked++
-			if !containsBounded(evidence, want) {
-				bad = append(bad, fmt.Sprintf("%s: esperado %q, leído %q", field, want, truncate(evidence, 120)))
-			}
 		}
 	}
 	if checked == 0 {
-		if f == nil {
-			return "", "", false
-		}
-		if evidence == "" {
-			return "", "", false
-		}
-		return "ok", "", true
+		return "", "", false
 	}
 	if len(bad) > 0 {
 		return "fallo", strings.Join(bad, "; "), true
@@ -240,25 +232,32 @@ func readField(rows []agent.Row, cols [][]string, field, target string) (string,
 	return "", false
 }
 
-// verifyCreate exige exactamente un registro con el identificador tras el commit.
-func (g *Guard) verifyCreate(st *agent.State, f *agent.FinishRequest) agent.Decision {
-	c := st.Class
+// createIDs son los identificadores con que se busca un registro creado: los
+// de la orden (NIT, documento, codigo) o, si no hay, el objetivo.
+func createIDs(c agent.Classification) []string {
 	ids := classIDs(c)
-	rows, _ := g.postRows()
-	evidence := strings.TrimSpace(f.Evidence)
 	if len(ids) == 0 && c.Target != "" {
 		ids = []string{c.Target}
 	}
-	if len(rows) == 0 {
-		if evidence == "" {
-			return agent.Deny("no se pudo leer el registro creado para verificarlo; no se da por terminada")
-		}
-		for _, id := range ids {
-			if strings.Contains(evidence, id) || (digits(id) != "" && strings.Contains(digits(evidence), digits(id))) {
-				return agent.Allow
-			}
-		}
-		return agent.Deny("la verificación no encontró el registro creado (%s) en lo leído", strings.Join(ids, ", "))
+	return ids
+}
+
+// verifyCreate exige, despues del commit, una busqueda completa (todas las
+// paginas) de la lista filtrada por el identificador, leida con purpose
+// "candidatos", con exactamente un registro con ese identificador. La ficha
+// del registro recien creado no cuenta (tiene una fila por construccion) y
+// la evidencia escrita por el modelo tampoco.
+func (g *Guard) verifyCreate(st *agent.State, _ *agent.FinishRequest) agent.Decision {
+	ids := createIDs(st.Class)
+	if len(ids) == 0 {
+		return agent.Deny("la orden no trae un identificador con que buscar el registro creado; no se da por terminada")
+	}
+	rows, found, why := g.idRun(ids, true)
+	if !found {
+		return agent.Deny("no se buscó el registro creado por su identificador (%s) en la lista después de guardar; no se da por terminada", strings.Join(ids, ", "))
+	}
+	if why != "" {
+		return agent.Deny("la búsqueda del registro creado por su identificador quedó incompleta (%s); no se da por terminada", why)
 	}
 	for _, id := range ids {
 		var match []agent.Row
@@ -378,6 +377,25 @@ func (g *Guard) incomplete() string {
 		return ""
 	}
 	last := g.pages[len(g.pages)-1]
+	first := len(g.pages) - 1
+	for i := len(g.pages) - 2; i >= 0; i-- {
+		o := g.pages[i]
+		if o.purpose != last.purpose || !strings.EqualFold(o.key, last.key) {
+			break
+		}
+		first = i
+	}
+	return runGap(g.pages[first:])
+}
+
+// runGap dice por que una racha de lecturas de una misma lista no cubre todas
+// sus paginas ("" si las cubre): la ultima pagina todavia ofrece 'siguiente'
+// o el indicador "pagina X de Y" tiene paginas sin leer.
+func runGap(run []obs) string {
+	if len(run) == 0 {
+		return ""
+	}
+	last := run[len(run)-1]
 	if last.page.NextVisible && last.page.NextEnabled && len(last.page.Rows) > 0 {
 		// La ultima pagina leida todavia ofrece "siguiente": una pagina
 		// repetida (un clic que no avanzo) no es el final de la lista
@@ -386,12 +404,8 @@ func (g *Guard) incomplete() string {
 	}
 	total := 0
 	seen := map[int]bool{}
-	for i := len(g.pages) - 1; i >= 0; i-- {
-		o := g.pages[i]
-		if o.purpose != last.purpose || !strings.EqualFold(o.key, last.key) {
-			break
-		}
-		m := rePage.FindStringSubmatch(o.page.Indicator)
+	for i := len(run) - 1; i >= 0; i-- {
+		m := rePage.FindStringSubmatch(run[i].page.Indicator)
 		if m == nil {
 			continue
 		}

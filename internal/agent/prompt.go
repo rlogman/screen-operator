@@ -13,7 +13,7 @@ const PromptVersion = "v1"
 
 // GuardrailsVersion identifica el fragmento prompts/guardrails.tmpl (epica 7),
 // que se agrega al prompt de sistema sin editar v1.tmpl.
-const GuardrailsVersion = "g1"
+const GuardrailsVersion = "g2"
 
 //go:embed prompts/v1.tmpl prompts/guardrails.tmpl
 var promptFS embed.FS
