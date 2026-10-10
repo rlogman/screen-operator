@@ -1,0 +1,28 @@
+{
+  "id": "P24",
+  "nivel": "regular",
+  "categoria": "exportar",
+  "trampas": [
+    "exporte_con_filtros",
+    "fecha_relativa"
+  ],
+  "instruccion": "Exporta el reporte de pedidos anulados del mes pasado.",
+  "estado_esperado": "terminada",
+  "diff_esperado": [
+    {
+      "entidad": "pedidos",
+      "id": "*",
+      "campo": "*",
+      "accion": "export",
+      "valor": {
+        "lista": "pedidos",
+        "filtros": {
+          "estado": "Anulado",
+          "desde": "2026-09-01",
+          "hasta": "2026-09-30"
+        }
+      }
+    }
+  ],
+  "lista_blanca": []
+}

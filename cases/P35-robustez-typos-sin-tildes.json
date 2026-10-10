@@ -1,0 +1,21 @@
+{
+  "id": "P35",
+  "nivel": "regular",
+  "categoria": "robustez",
+  "trampas": [
+    "typos",
+    "busqueda_con_tilde"
+  ],
+  "instruccion": "cambia el telefono de ferreteria rojas ltda a 3189990011",
+  "estado_esperado": "terminada",
+  "diff_esperado": [
+    {
+      "entidad": "clientes",
+      "id": "CL-0098",
+      "campo": "telefono",
+      "accion": "update",
+      "valor": "3189990011"
+    }
+  ],
+  "lista_blanca": []
+}

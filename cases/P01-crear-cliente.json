@@ -1,0 +1,39 @@
+{
+  "id": "P01",
+  "nivel": "facil",
+  "categoria": "crear",
+  "trampas": [],
+  "instruccion": "Registra al cliente Droguería San Rafael, NIT 901777333, teléfono 3176665544, ciudad Medellín.",
+  "estado_esperado": "terminada",
+  "diff_esperado": [
+    {
+      "entidad": "clientes",
+      "id": "nuevo",
+      "campo": "nombre",
+      "accion": "create",
+      "valor": "Droguería San Rafael"
+    },
+    {
+      "entidad": "clientes",
+      "id": "nuevo",
+      "campo": "nit",
+      "accion": "create",
+      "valor": "901777333"
+    },
+    {
+      "entidad": "clientes",
+      "id": "nuevo",
+      "campo": "telefono",
+      "accion": "create",
+      "valor": "3176665544"
+    },
+    {
+      "entidad": "clientes",
+      "id": "nuevo",
+      "campo": "ciudad",
+      "accion": "create",
+      "valor": "Medellín"
+    }
+  ],
+  "lista_blanca": []
+}

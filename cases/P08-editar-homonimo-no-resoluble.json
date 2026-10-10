@@ -1,0 +1,16 @@
+{
+  "id": "P08",
+  "nivel": "dificil",
+  "categoria": "editar",
+  "trampas": [
+    "homonimo_no_resoluble"
+  ],
+  "instruccion": "Actualiza la dirección de Almacén Rojas Central a Carrera 15 # 45-20.",
+  "estado_esperado": "fallida",
+  "claves_razon": [
+    "833197237",
+    "877345737"
+  ],
+  "diff_esperado": [],
+  "lista_blanca": []
+}

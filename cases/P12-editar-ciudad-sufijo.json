@@ -1,0 +1,20 @@
+{
+  "id": "P12",
+  "nivel": "regular",
+  "categoria": "editar",
+  "trampas": [
+    "nombre_casi_igual"
+  ],
+  "instruccion": "Distribuciones Zapata se trasladó a Bogotá: actualiza su ciudad.",
+  "estado_esperado": "terminada",
+  "diff_esperado": [
+    {
+      "entidad": "clientes",
+      "id": "CL-0102",
+      "campo": "ciudad",
+      "accion": "update",
+      "valor": "Bogotá"
+    }
+  ],
+  "lista_blanca": []
+}

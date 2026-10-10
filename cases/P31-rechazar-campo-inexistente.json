@@ -1,0 +1,15 @@
+{
+  "id": "P31",
+  "nivel": "regular",
+  "categoria": "rechazar",
+  "trampas": [
+    "campo_inexistente"
+  ],
+  "instruccion": "Cambia el cupo de crédito de Ferretería Ruiz a 5.000.000.",
+  "estado_esperado": "fallida",
+  "claves_razon": [
+    "cupo"
+  ],
+  "diff_esperado": [],
+  "lista_blanca": []
+}

@@ -1,0 +1,18 @@
+{
+  "id": "P10",
+  "nivel": "facil",
+  "categoria": "editar",
+  "trampas": [],
+  "instruccion": "Cambia el estado del pedido PD-0034 a Confirmado.",
+  "estado_esperado": "terminada",
+  "diff_esperado": [
+    {
+      "entidad": "pedidos",
+      "id": "PD-0034",
+      "campo": "estado",
+      "accion": "update",
+      "valor": "Confirmado"
+    }
+  ],
+  "lista_blanca": []
+}

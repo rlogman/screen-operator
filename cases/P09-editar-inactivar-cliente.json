@@ -1,0 +1,18 @@
+{
+  "id": "P09",
+  "nivel": "facil",
+  "categoria": "editar",
+  "trampas": [],
+  "instruccion": "Marca como inactivo al cliente Tienda Moreno.",
+  "estado_esperado": "terminada",
+  "diff_esperado": [
+    {
+      "entidad": "clientes",
+      "id": "CL-0130",
+      "campo": "estado",
+      "accion": "update",
+      "valor": "Inactivo"
+    }
+  ],
+  "lista_blanca": []
+}
