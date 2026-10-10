@@ -27,6 +27,7 @@ import (
 	"screenoperator/internal/api"
 	"screenoperator/internal/config"
 	"screenoperator/internal/tasks"
+	"screenoperator/internal/trace"
 )
 
 // EnvConfigDir es el directorio con base.yaml, schema.json, surfaces/ y apps/.
@@ -113,6 +114,8 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout,
 		Budget:   budget,
 		Logger:   log,
 		Redactor: red,
+		// Trazas por paso solo si SO_TRACE_DIR esta definida.
+		TraceDir: strings.TrimSpace(getenv(trace.EnvDir)),
 	})
 	srv, err := api.NewServer(contract, token, mgr, log)
 	if err != nil {
@@ -205,6 +208,7 @@ func budgetFrom(cfg *config.Config) (tasks.Budget, error) {
 func provisionalRunner() tasks.Runner {
 	return tasks.RunnerFunc(func(_ context.Context, job *tasks.Job) tasks.Result {
 		job.Log.Info("runner provisional", tasks.LogKeyPhase, "agente")
+		_ = job.Trace.Step(trace.Step{Phase: "agente", Action: "reportar fallida", Reason: ProvisionalSummary})
 		return tasks.Result{Status: tasks.StatusFailed, Summary: ProvisionalSummary}
 	})
 }

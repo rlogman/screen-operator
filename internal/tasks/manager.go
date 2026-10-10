@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"screenoperator/internal/trace"
 )
 
 // Causas de cancelacion de una tarea.
@@ -50,6 +52,9 @@ type Options struct {
 	Redactor *Redactor
 	NewID    func() string
 	Now      func() time.Time
+	// TraceDir activa las trazas por paso (SO_TRACE_DIR): <TraceDir>/<task_id>/.
+	// Vacio: no se escribe nada en disco.
+	TraceDir string
 }
 
 // Manager ejecuta una tarea por escritorio a la vez, aplica el deadline interno
@@ -71,6 +76,7 @@ type task struct {
 	log     *slog.Logger
 	red     *Redactor
 	created time.Time
+	usage   *UsageMeter
 	// protegidos por Manager.mu
 	status   Status
 	summary  string
@@ -145,6 +151,7 @@ func (m *Manager) Submit(req Request) (string, error) {
 		log:     WithSecrets(m.o.Logger, secrets...).With(LogKeyTaskID, id),
 		red:     m.o.Redactor.With(secrets...),
 		created: now,
+		usage:   &UsageMeter{},
 		status:  StatusRunning,
 	}
 	m.tasks[id] = t
@@ -179,6 +186,17 @@ func (m *Manager) Get(id string) (Snapshot, bool) {
 		return Snapshot{}, false
 	}
 	return Snapshot{ID: t.id, Status: t.status, Summary: t.summary, CreatedAt: t.created, FinishedAt: t.finished}, true
+}
+
+// Metrics devuelve el consumo acumulado de una tarea (diagnostico).
+func (m *Manager) Metrics(id string) (Usage, bool) {
+	m.mu.Lock()
+	t, ok := m.tasks[id]
+	m.mu.Unlock()
+	if !ok {
+		return Usage{}, false
+	}
+	return t.usage.Get(), true
 }
 
 // Shutdown cancela todas las tareas y espera a que sus sesiones se cierren o a ctx.
@@ -242,7 +260,8 @@ func (m *Manager) work(ctx context.Context, cancel context.CancelCauseFunc, t *t
 	gate := newGate(ctx, sess)
 
 	// 3. Ejecutar el agente. Un panic se convierte en fallida generica.
-	job := &Job{ID: t.id, Request: t.req, Input: gate, Log: t.log}
+	rec := m.recorder(t)
+	job := &Job{ID: t.id, Request: t.req, Input: gate, Log: t.log, Usage: t.usage, Trace: rec}
 	resCh := make(chan Result, 1)
 	go func() {
 		defer func() {
@@ -265,12 +284,29 @@ func (m *Manager) work(ctx context.Context, cancel context.CancelCauseFunc, t *t
 	// de publicar el estado y antes de que la tarea siguiente conecte.
 	gate.Close()
 	cancel(errReported)
+	if err := rec.Close(); err != nil {
+		t.log.Warn("error al cerrar la traza", LogKeyPhase, "cierre", "error", err)
+	}
 	if err := sess.Close(); err != nil {
 		t.log.Warn("error al cerrar la sesion", LogKeyPhase, "cierre", "error", err)
 	}
 	sent, denied := gate.Counts()
 	t.log.Info("sesion cerrada", LogKeyPhase, "cierre", "eventos_enviados", sent, "eventos_rechazados", denied)
 	m.finish(t, res, start)
+}
+
+// recorder crea la traza de la tarea. Cada paso suma en el Usage de la tarea.
+// Si el directorio falla, la tarea sigue sin traza en disco.
+func (m *Manager) recorder(t *task) *trace.Recorder {
+	onStep := func(s trace.Step) {
+		t.usage.Add(Usage{Steps: 1, TokensIn: s.TokensIn, TokensOut: s.TokensOut, CostUSD: s.CostUSD})
+	}
+	rec, err := trace.New(m.o.TraceDir, t.id, t.red, onStep)
+	if err != nil {
+		t.log.Warn("traza desactivada para esta tarea", LogKeyPhase, "traza", "error", err)
+		rec, _ = trace.New("", t.id, t.red, onStep)
+	}
+	return rec
 }
 
 // causeResult traduce la causa de cancelacion a un resultado fallido.
