@@ -21,9 +21,11 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -32,6 +34,10 @@ import (
 
 //go:embed goals.yaml
 var defaultGoals []byte
+
+// httpClient es nil en produccion (clientes por defecto); los tests lo
+// reemplazan por uno en memoria.
+var httpClient *http.Client
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -133,8 +139,8 @@ func cmdRun(ctx context.Context, args []string, getenv func(string) string, now 
 	}
 	defer f.Close()
 	r := &harness.Runner{
-		Desktop:      &harness.Desktop{BaseURL: base, Token: dtok},
-		Agent:        &harness.Agent{BaseURL: *agentURL, Token: atok},
+		Desktop:      &harness.Desktop{BaseURL: base, Token: dtok, Client: httpClient},
+		Agent:        &harness.Agent{BaseURL: strings.TrimRight(*agentURL, "/"), Token: atok, Client: httpClient},
 		DesktopWS:    ws,
 		Password:     pass,
 		Secrets:      []string{atok, dtok, getenv("OPENROUTER_API_KEY")},
