@@ -20,8 +20,12 @@ type Policy struct {
 		NeverResubmitWithoutVerify bool `json:"never_resubmit_without_verify"`
 	} `json:"writes"`
 	Destructive struct {
-		BulkChanges         string   `json:"bulk_changes"`
-		Keywords            []string `json:"keywords"`
+		BulkChanges string   `json:"bulk_changes"`
+		Keywords    []string `json:"keywords"`
+		// OrderContextVerbs son verbos de Keywords que en una orden suelen ser
+		// contexto ("tras anular una factura...", "la cita cancelada"): no
+		// rechazan la orden por palabra clave. Siguen contando para dialogos.
+		OrderContextVerbs   []string `json:"order_context_verbs"`
 		RequireUniqueTarget bool     `json:"require_unique_target"`
 	} `json:"destructive"`
 	UnknownValues string `json:"unknown_values"`
@@ -88,10 +92,14 @@ func PolicyFromConfig(c *config.Config) (Policy, error) {
 // (-ar/-er/-ir) son verbos y se comparan por raiz ("elimina", "eliminen");
 // el resto ("todos") son palabras de alcance y se comparan exactas.
 func (p Policy) verbs() []string {
+	skip := map[string]bool{}
+	for _, k := range p.Destructive.OrderContextVerbs {
+		skip[fold(k)] = true
+	}
 	var out []string
 	for _, k := range p.Destructive.Keywords {
 		k = fold(k)
-		if isInfinitive(k) {
+		if isInfinitive(k) && !skip[k] {
 			out = append(out, k)
 		}
 	}

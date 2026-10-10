@@ -437,6 +437,12 @@
             },
             "require_unique_target": {
               "type": "boolean"
+            },
+            "order_context_verbs": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
             }
           }
         },

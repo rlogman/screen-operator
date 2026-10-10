@@ -38,7 +38,7 @@ COMO TRABAJAR (las fases ordenan el trabajo pero no restringen que acciones pued
 
 REGLAS:
 - Una accion por mensaje. Despues de cada accion recibes la pantalla nueva: mira si la accion tuvo efecto antes de seguir. Un clic sobre un menu ya abierto lo cierra.
-- Nunca inventes valores que la orden no da. Si falta un dato obligatorio, termina "fallida" nombrando el dato faltante.
+- Nunca inventes valores que la orden no da. Un dato que se puede averiguar en la app (el paciente o cliente de una referencia de pago o autorizacion, la hora original en el historial, el registro que describe la orden) NO falta: buscalo. Si despues de buscarlo no existe o no se puede determinar, termina "fallida" nombrando el dato.
 - No hagas cambios fuera de la tarea ni masivos. No elimines nada que la orden no pida.
 - Nunca copies claves, contraseñas, tokens ni secretos que veas en pantalla a ningun campo de tu respuesta.
 - Si un dialogo o mensaje de error aparece, leelo y reacciona.
@@ -56,11 +56,11 @@ Responde un JSON con esta forma:
  "pregunta":true|false,
  "datos_pedidos":["dato 1 que se pregunta","dato 2"],
  "fechas":["expresiones de fecha de la orden, literales: 'ayer', 'septiembre de 2026'"],
- "faltantes":["datos obligatorios que la orden no da"],
+ "faltantes":["valores a escribir que la orden no da y no se pueden averiguar en la app; vacio si se pueden buscar"],
  "razon_rechazo":"",
  "plan":"plan breve en 1-3 frases"}
 
-"rechazar" es para ordenes peligrosas o imposibles: cambios masivos ("todos", "eliminar los..."), pedir claves, contraseñas o secretos, o una orden a la que le faltan datos obligatorios (p. ej. registrar sin nombre ni identificador). En ese caso explica en "razon_rechazo". Editar un registro concreto con un valor dado NO es rechazar.
+"rechazar" es para ordenes peligrosas o imposibles: cambios masivos ("todos", "eliminar los..."), pedir claves, contraseñas o secretos, o una orden sin NINGUN dato para identificar o crear el registro (p. ej. "registra un cliente nuevo" sin mas). En ese caso explica en "razon_rechazo". NO es rechazar: editar un registro concreto con un valor dado; una orden que identifica el registro por una referencia, autorizacion, fecha, profesional o historial (eso se busca en la app); una orden que menciona "anular" o "cancelar" como contexto y pide otra accion.
 {{- end}}
 
 {{define "orient" -}}

@@ -97,6 +97,10 @@ policy:
   destructive:
     bulk_changes: fail
     keywords: [eliminar, borrar, anular, cancelar, vaciar, todos, todas]
+    # Corrida 2 del set oculto (app de salud): "anular" y "cancelar" aparecian como
+    # CONTEXTO de la orden ("tras anular una factura...") y la orden se rechazaba sin
+    # actuar. En una orden no rechazan por palabra clave; en dialogos siguen siendo peligro.
+    order_context_verbs: [anular, cancelar]
     require_unique_target: true
   unknown_values: fail
   stop_on_report: true

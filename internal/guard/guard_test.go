@@ -361,3 +361,26 @@ func TestE7_3_S1_PreCreateSearchMustBeFilteredAndComplete(t *testing.T) {
 		t.Fatalf("busqueda con filtro en la extraccion bloqueada: %s", d.Reason)
 	}
 }
+
+// Corrida 2 del set oculto: "anular"/"cancelar" como contexto de la orden no la
+// rechazan si policy.destructive.order_context_verbs los incluye; "eliminar" y
+// los masivos siguen rechazando.
+func TestE7_1_S4_ContextVerbDoesNotRejectOrder(t *testing.T) {
+	p := DefaultPolicy()
+	p.Destructive.OrderContextVerbs = []string{"anular", "cancelar"}
+	g := NewGuard(p, nil)
+	s := st("Crea la factura de reemplazo emitida ayer, tras anular una factura por error en el valor", agent.IntentCreate, "factura de reemplazo", map[string]string{"motivo": "reemplazo"})
+	if d := g.Classified(s); d.Deny {
+		t.Fatalf("rechazada por contexto: %s", d.Reason)
+	}
+	s = st("Elimina todos los clientes inactivos", agent.IntentEdit, "clientes inactivos", map[string]string{"estado": "eliminado"})
+	if d := g.Classified(s); !d.Deny {
+		t.Fatal("cambio masivo aceptado")
+	}
+	// Sin la lista de contexto, el comportamiento anterior se conserva.
+	g = New().(*Guard)
+	s = st("Crea la factura de reemplazo emitida ayer, tras anular una factura por error en el valor", agent.IntentCreate, "factura de reemplazo", map[string]string{"motivo": "reemplazo"})
+	if d := g.Classified(s); !d.Deny {
+		t.Fatal("sin order_context_verbs, 'anular' debe seguir rechazando")
+	}
+}
