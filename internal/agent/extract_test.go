@@ -210,6 +210,27 @@ func TestE6_5_S3_SkippedPageIsIncomplete(t *testing.T) {
 		t.Fatalf("tras extraer la 2: complete=%v conteo=%d %q", g.Complete, g.Count(), g.Stop)
 	}
 
+	// Indicador solo con numero ("Página N", como SIGECOM v4.2): el total lo
+	// fija la ultima pagina (sin siguiente).
+	g = NewAggregator("facturas", "Factura", "conteo", nil)
+	g.AddPage(mustPage(t, pageJSONInd(1, 20, true, "Página 1")))
+	g.AddPage(mustPage(t, pageJSONInd(21, 20, true, "Página 2")))
+	g.NoteAdvance()
+	g.NoteAdvance()
+	if _, stop := g.AddPage(mustPage(t, pageJSONInd(61, 7, false, "Página 4"))); !stop || g.Complete || !strings.Contains(g.Stop, "faltan las paginas 3 de 4") {
+		t.Fatalf("Página N sin total: stop=%v complete=%v %q", stop, g.Complete, g.Stop)
+	}
+	g.AddPage(mustPage(t, pageJSONInd(41, 20, true, "Página 3")))
+	if !g.Complete || g.Count() != 67 {
+		t.Fatalf("Página N tras volver a la 3: complete=%v conteo=%d %q", g.Complete, g.Count(), g.Stop)
+	}
+	if n, m, ok := ParseIndicator("Pag. 7"); !ok || n != 7 || m != 0 {
+		t.Fatalf("ParseIndicator(Pag. 7) = %d %d %v", n, m, ok)
+	}
+	if _, _, ok := ParseIndicator("45 registros"); ok {
+		t.Fatal("'45 registros' no es un numero de pagina")
+	}
+
 	// Sin indicador: dos avances entre extracciones no es confiable.
 	g = NewAggregator("facturas", "Factura", "conteo", nil)
 	g.AddPage(mustPage(t, pageJSON(1, 20, true)))

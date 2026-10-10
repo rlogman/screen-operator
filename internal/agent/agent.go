@@ -629,9 +629,7 @@ func (a *Agent) doExtract(ctx context.Context, act Action) error {
 	if st.Extract == nil || !st.Extract.Same(act.KeyCol, act.Purpose, act.Filters) {
 		st.Extract = NewAggregator(act.What, act.KeyCol, act.Purpose, act.Filters)
 	}
-	before := len(st.Extract.Rows())
-	st.Extract.AddPage(page)
-	added := len(st.Extract.Rows()) - before
+	added, _ := st.Extract.AddPage(page)
 	a.hasNextXY = false
 	msgStop := st.Extract.Stop
 	if st.Extract.Complete {
@@ -712,14 +710,18 @@ func (a *Agent) doScreenAction(ctx context.Context, act Action) error {
 	} else {
 		a.lastNoEffect = act.String()
 	}
-	if out.Changed && st.Extract != nil && a.isPageAdvance(act) {
+	pageAdv := out.Changed && st.Extract != nil && a.isPageAdvance(act)
+	if pageAdv {
 		st.Extract.NoteAdvance()
+		if !st.Extract.Complete {
+			result += "; si la lista cambio de pagina, EXTRAE esta pagina ahora, antes de volver a avanzar"
+		}
 	}
 	a.recent = append(a.recent, act.String())
 	if len(a.recent) > 4 {
 		a.recent = a.recent[len(a.recent)-4:]
 	}
-	if n := countEqual(a.recent, act.String()); n >= 3 && out.Changed {
+	if n := countEqual(a.recent, act.String()); n >= 3 && out.Changed && !pageAdv {
 		// Un clic que abre y cierra lo mismo (p. ej. un menu) cambia la pantalla
 		// pero no avanza.
 		result += fmt.Sprintf("; REPETISTE ESTA ACCION %d VECES SIN AVANZAR: un clic sobre un menu abierto lo cierra; usa hover sobre la opcion o el submenu, pide zoom o prueba otro camino", n)

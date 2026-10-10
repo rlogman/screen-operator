@@ -113,8 +113,9 @@ func cell(v any) string {
 //
 // Detenida (Stopped) y completa (Complete) son estados distintos: la
 // extraccion se detiene cuando no hay pagina siguiente habilitada o la pagina
-// no avanzo, pero solo es completa si se vieron todas las paginas. Con
-// indicador "Pagina N de M" completa = paginas vistas {1..M}. Sin indicador,
+// no avanzo, pero solo es completa si se vieron todas las paginas. Con numero
+// de pagina ("Pagina N de M" o "Pagina N") completa = paginas vistas {1..M},
+// donde M viene del indicador o de la ultima pagina (sin siguiente). Sin numero,
 // cada extraccion debe estar separada de la anterior por exactamente un avance
 // de pagina (NoteAdvance) y la ultima debe tener "siguiente" deshabilitado.
 // El cierre con agregado exige Complete.
@@ -132,6 +133,8 @@ type Aggregator struct {
 	pageSeen map[int]bool // numeros de pagina extraidos (por indicador)
 	total    int          // M del indicador; 0 = desconocido
 	lastNum  int          // numero de la ultima pagina extraida; 0 = desconocido
+	maxNum   int          // mayor numero de pagina extraido
+	numbered bool         // la app muestra numero de pagina
 	advances int          // avances de pagina desde la ultima extraccion
 	chainBad string       // sin indicador: por que la cadena de avances no es confiable
 	restart  bool         // la proxima extraccion reinicia el acumulado
@@ -161,20 +164,28 @@ func (g *Aggregator) Same(keyCol, purpose string, filters map[string]string) boo
 // entre dos extracciones.
 func (g *Aggregator) NoteAdvance() { g.advances++ }
 
-var reIndicator = regexp.MustCompile(`(?i)(\d+)\s*(?:de|of|/)\s*(\d+)`)
+var (
+	reIndicator = regexp.MustCompile(`(?i)(\d+)\s*(?:de|of|/)\s*(\d+)`)
+	rePageOnly  = regexp.MustCompile(`(?i)p(?:á|a)g(?:ina)?\.?\s*(\d+)`)
+)
 
-// ParseIndicator lee "Pagina N de M". ok=false si no hay indicador valido.
+// ParseIndicator lee el indicador de pagina: "Pagina N de M" da n y m;
+// "Pagina N" da solo n (m=0). ok=false si no hay numero de pagina.
 func ParseIndicator(s string) (n, m int, ok bool) {
-	sm := reIndicator.FindStringSubmatch(s)
-	if sm == nil {
-		return 0, 0, false
+	if sm := reIndicator.FindStringSubmatch(s); sm != nil {
+		n, _ = strconv.Atoi(sm[1])
+		m, _ = strconv.Atoi(sm[2])
+		if n >= 1 && m >= 1 && n <= m {
+			return n, m, true
+		}
 	}
-	n, _ = strconv.Atoi(sm[1])
-	m, _ = strconv.Atoi(sm[2])
-	if n < 1 || m < 1 || n > m {
-		return 0, 0, false
+	if sm := rePageOnly.FindStringSubmatch(s); sm != nil {
+		n, _ = strconv.Atoi(sm[1])
+		if n >= 1 {
+			return n, 0, true
+		}
 	}
-	return n, m, true
+	return 0, 0, false
 }
 
 // AddPage agrega una pagina. Devuelve las filas nuevas y si la extraccion se
@@ -201,22 +212,27 @@ func (g *Aggregator) AddPage(p Page) (added int, stop bool) {
 	}
 	sort.Strings(keys)
 	sig := strings.Join(keys, "\x00")
-	n, m, hasInd := ParseIndicator(p.Indicator)
-	repeated := !first && ((len(p.Rows) > 0 && sig == g.lastSig) || (hasInd && n == g.lastNum))
+	n, m, hasNum := ParseIndicator(p.Indicator)
+	repeated := !first && ((len(p.Rows) > 0 && sig == g.lastSig) || (hasNum && n == g.lastNum))
 	g.lastSig = sig
 
-	if hasInd {
-		if m > g.total {
-			g.total = m
-		}
-	} else if repeated {
+	switch {
+	case hasNum:
+		g.numbered = true
+	case repeated:
 		n = g.lastNum
-	} else if g.lastNum > 0 && adv == 1 {
-		n = g.lastNum + 1 // sin indicador en esta pagina: se deduce del avance unico
-	} else {
+	case g.lastNum > 0 && adv == 1:
+		n = g.lastNum + 1 // sin numero en esta pagina: se deduce del avance unico
+	default:
 		n = 0
 	}
-	if !first && !repeated && !hasInd && adv != 1 && g.total == 0 {
+	if m > g.total {
+		g.total = m
+	}
+	if n > 0 && !p.NextEnabled && n > g.total {
+		g.total = n // la ultima pagina (sin siguiente) fija el total
+	}
+	if !g.numbered && !first && !repeated && adv != 1 {
 		if adv == 0 {
 			g.chainBad = "entre dos extracciones no hubo un avance de pagina reconocido"
 		} else {
@@ -225,14 +241,26 @@ func (g *Aggregator) AddPage(p Page) (added int, stop bool) {
 	}
 	if n > 0 {
 		g.pageSeen[n] = true
-		g.lastNum = n
-	} else if !repeated {
-		g.lastNum = 0
+		if n > g.maxNum {
+			g.maxNum = n
+		}
 	}
+	g.lastNum = n
 
 	g.Stopped = repeated || !p.NextEnabled
 	g.Complete, g.Stop = g.completeness(p, repeated)
 	return added, g.Stopped
+}
+
+// missingUpTo lista las paginas 1..k que no se extrajeron.
+func (g *Aggregator) missingUpTo(k int) []string {
+	var out []string
+	for i := 1; i <= k; i++ {
+		if !g.pageSeen[i] {
+			out = append(out, strconv.Itoa(i))
+		}
+	}
+	return out
 }
 
 // completeness decide si se vieron todas las paginas y explica por que no.
@@ -240,24 +268,32 @@ func (g *Aggregator) completeness(p Page, repeated bool) (bool, string) {
 	if repeated && p.NextEnabled {
 		return false, "la pagina no avanzo; reintenta siguiente"
 	}
-	if g.total > 0 {
-		var missing []string
-		for i := 1; i <= g.total; i++ {
-			if !g.pageSeen[i] {
-				missing = append(missing, strconv.Itoa(i))
+	if g.numbered {
+		upTo := g.maxNum
+		if g.total > 0 {
+			upTo = g.total
+		}
+		if miss := g.missingUpTo(upTo); len(miss) > 0 {
+			of := ""
+			if g.total > 0 {
+				of = fmt.Sprintf(" de %d", g.total)
 			}
+			return false, fmt.Sprintf("faltan las paginas %s%s: vuelve a cada una (anterior o su numero), extraela y sigue; lo ya extraido se conserva y los filtros no se tocan", strings.Join(miss, ", "), of)
 		}
-		if len(missing) > 0 {
-			return false, fmt.Sprintf("faltan las paginas %s de %d: navega a cada una y extraela", strings.Join(missing, ", "), g.total)
+		if g.total > 0 {
+			return true, fmt.Sprintf("se extrajeron las %d paginas", g.total)
 		}
-		return true, fmt.Sprintf("se extrajeron las %d paginas", g.total)
+		if !p.NextEnabled {
+			return false, "no se leyo el numero de esta ultima pagina: extraela de nuevo"
+		}
+		return false, "hay pagina siguiente: haz UN clic en siguiente y extrae esa pagina"
 	}
 	if g.chainBad != "" {
 		g.restart = true
-		return false, g.chainBad + "; vuelve a la primera pagina de la lista y extrae de nuevo pagina por pagina (el acumulado se reinicia)"
+		return false, g.chainBad + "; vuelve a la primera pagina de la lista (sin cambiar los filtros) y extrae de nuevo pagina por pagina (el acumulado se reinicia)"
 	}
 	if p.NextEnabled {
-		return false, "hay pagina siguiente: avanza y vuelve a extraer"
+		return false, "hay pagina siguiente: haz UN clic en siguiente y extrae esa pagina"
 	}
 	if repeated {
 		return true, "la pagina repite la anterior y no hay pagina siguiente habilitada"
