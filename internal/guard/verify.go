@@ -378,6 +378,12 @@ func (g *Guard) incomplete() string {
 		return ""
 	}
 	last := g.pages[len(g.pages)-1]
+	if last.page.NextVisible && last.page.NextEnabled && len(last.page.Rows) > 0 {
+		// La ultima pagina leida todavia ofrece "siguiente": una pagina
+		// repetida (un clic que no avanzo) no es el final de la lista
+		// (falso exito medido en E3: 29 y 27 en vez de 45).
+		return "la última página leída todavía tiene 'siguiente' habilitado"
+	}
 	total := 0
 	seen := map[int]bool{}
 	for i := len(g.pages) - 1; i >= 0; i-- {

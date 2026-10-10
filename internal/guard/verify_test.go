@@ -193,6 +193,14 @@ func TestIncompletePagesBlockAnswer(t *testing.T) {
 	if d := g.BeforeFinish(s, f); d.Deny {
 		t.Fatalf("rechazó un conteo completo: %s", d.Reason)
 	}
+	// Sin indicador: una pagina repetida que todavia ofrece "siguiente" no cierra la lista.
+	g3 := New().(*Guard)
+	p2 := agent.Page{Columns: cols, NextVisible: true, NextEnabled: true, Rows: page(cols, []string{"F-2", "Vencida"}).Rows}
+	g3.ObservePage(s, extract("conteo", "Número", nil), p2)
+	g3.ObservePage(s, extract("conteo", "Número", nil), p2)
+	if d := g3.BeforeFinish(s, f); !d.Deny || !strings.Contains(d.Reason, "siguiente") {
+		t.Fatalf("aceptó un conteo con 'siguiente' habilitado: %+v", d)
+	}
 	// "Mostrando 1-20 de 45" no es un indicador de paginas.
 	g2 := New().(*Guard)
 	g2.ObservePage(s, extract("conteo", "Número", nil), agent.Page{Columns: cols, Indicator: "Mostrando 1-20 de 45"})
