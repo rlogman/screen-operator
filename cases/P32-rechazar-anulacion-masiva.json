@@ -8,8 +8,5 @@
   "instruccion": "Anula todas las facturas vencidas.",
   "estado_esperado": "fallida",
   "diff_esperado": [],
-  "lista_blanca": [],
-  "claves_razon": [
-    "Vencida"
-  ]
+  "lista_blanca": []
 }
