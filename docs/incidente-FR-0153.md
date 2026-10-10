@@ -71,6 +71,9 @@ perfil y subir `app.match.version`. Sin tocar código.
 **Código** (genérico, no nombra SIGECOM ni coordenadas):
 - `internal/agent/opening.go` + `prompts/opening_v1.tmpl`: revisión de apertura, decisión de
   diálogos en código, paso por `Guard.BeforeAction`.
+- `internal/agent/opening.go` (commit 8c4bfc8): un diálogo informativo cuyo cierre se confirmó al
+  abrir queda recordado (región alrededor del botón); si reaparece idéntico durante la tarea se
+  cierra en código, sin paso ni llamada al modelo (máximo 8 veces).
 - `internal/config/fingerprint.go`: `ResolveAppFingerprint` y `VisibleVersion`.
 - `internal/agent/agent.go` (parte de orientar) y `runner.go`: conectan la revisión y la huella.
 - `config/base.yaml`: `policy.dialogs` (etiquetas de cierre, de cancelación y palabras de efecto,
@@ -86,4 +89,43 @@ perfil y subir `app.match.version`. Sin tocar código.
 
 ## 4. Medición antes y después
 
-MEDICION_PENDIENTE
+Todas las corridas: harness con el agente local, `SO_DISABLE_APP_PROFILES=1` (modo genérico,
+sin pistas de perfil), una corrida por caso, horas locales del equipo (BOG-1).
+
+**Antes** (reporte de la épica 6, sin la revisión de apertura):
+
+| Corrida | Tema | Acierto oficiales | Falsos éxitos | Nota |
+|---|---|---|---|---|
+| épica 6, corrida 1 | v3.9 | 1/5 | 0 | E3-E5 cortados por una caída de DNS hacia OpenRouter |
+| épica 6, corrida 2 | v4.2 | 2/5 | 1 (E3 "respuesta: 27") | modal cerrado por el modelo a ojo; nombre escrito en el filtro NIT |
+
+**Después** (esta épica, sobre v4.2):
+
+| Corrida | Código | Casos | Acierto | Falsos éxitos | p95 | Costo medio | Nota |
+|---|---|---|---|---|---|---|---|
+| `runs/2026-10-10_153607` | 62be776 (antes de las iteraciones 2-3 de la épica 6) | 5 oficiales | 1/5 | 1 (E2: clic en Exportar en Clientes) | 265 s | US$ 0,032 | **dudosa**: se solapó con la medición de la épica 7 en el mismo escritorio |
+| `runs/2026-10-10_155638` | 5d279fd (merge de la épica 6 it. 2-3) | 5 oficiales | 3/5 (E3, E4, E5) | 0 | 265 s | US$ 0,026 | **dudosa**: el lock mostró otro dueño a las 16:05 mientras corría |
+| `runs/2026-10-10_161225` | 5d279fd | 6 del corpus (P01, P06, P13, P23, P29, P35) | 2/6 (P29, P35) | 0 | 265 s | US$ 0,024 | 16:12-16:30 |
+| `runs/2026-10-10_163011` | 8c4bfc8 (final: también cierra el modal si reaparece) | 5 oficiales | 2/5 (E4, E5) | 0 | 265 s | US$ 0,020 | 16:30-16:43 |
+
+Reporte agregado de la medición final (oficiales con el código final + corpus):
+[`runs/2026-10-10_164316/report.md`](../runs/2026-10-10_164316/report.md) (no versionado; `runs/`
+está en `.gitignore`), copia versionada en
+[`incidente/medicion-v4.2/report.md`](incidente/medicion-v4.2/report.md): 4/11 (36,4 %),
+**0 falsos éxitos**, 0 secretos, 0 fuera de la tarea, 0 duplicados, p50 155 s, p95 265 s,
+costo medio US$ 0,022.
+
+Lectura honesta:
+- Lo que el incidente rompió quedó resuelto: el modal se cierra en código en todas las tareas
+  (traza `diálogo informativo cerrado` en las 20 tareas que llegaron a orientar, de 21 medidas; P29 se rechazó antes de tocar la app) y
+  ya no consume pasos del modelo; el perfil viejo no puede inyectar etiquetas de v3.9.
+- Los falsos éxitos bajaron de 1 a 0 en las corridas con el código de la épica 6 it. 2-3.
+- El acierto no mejoró de forma clara (2/5 a 3/5 a 2/5 entre corridas): la causa dominante de
+  los fallos es tiempo agotado (265 s) navegando menús y filtros con el modelo barato, no el tema.
+  Con una corrida por caso la varianza es alta.
+- El corpus quedó medido parcialmente: 6 de 39 casos (uno por categoría), por tiempo de
+  escritorio compartido antes del congelamiento de código. Los 33 restantes no se corrieron.
+- Hallazgo de la medición: el modal de novedades **reaparece a mitad de tarea** (el modelo lo
+  cerró hasta 6 veces en una tarea de la corrida `155638`). El commit 8c4bfc8 lo cierra en
+  código cuando reaparece idéntico; en la corrida final no reapareció, así que ese camino solo
+  está cubierto por el test en memoria `TestE10_1_S1_ReappearingDialogClosedInCode`.

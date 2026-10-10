@@ -43,10 +43,16 @@ func TestE10_3_S2_DocLinksV42HarnessReport(t *testing.T) {
 	if !strings.Contains(doc, "incidente/medicion-v4.2/report.md") {
 		t.Fatal("el documento no enlaza la copia versionada del reporte")
 	}
-	for _, want := range []string{"material/pruebas/", "cases/"} {
-		if !strings.Contains(rep, want) {
-			t.Errorf("el reporte no incluye casos de %s", want)
-		}
+	// Oficiales (grupo "oficial") y casos del corpus (grupos por categoria).
+	if !strings.Contains(rep, "| oficial |") {
+		t.Error("el reporte no incluye los casos oficiales (material/pruebas/)")
+	}
+	corpus := false
+	for _, g := range []string{"| crear |", "| editar |", "| consultar |", "| exportar |", "| rechazar |", "| robustez |"} {
+		corpus = corpus || strings.Contains(rep, g)
+	}
+	if !corpus {
+		t.Error("el reporte no incluye casos del corpus (cases/)")
 	}
 	// Si la corrida esta en este checkout, la copia es la misma.
 	if orig, err := os.ReadFile(filepath.Join(root, runLink)); err == nil && string(orig) != rep {
