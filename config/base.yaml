@@ -61,9 +61,18 @@ models:
   # Candidatos a comparar en el harness (precios OpenRouter 2026-10-10, US$ por M tokens in/out):
   #   actor:    openai/gpt-4o-mini (0.15/0.60), anthropic/claude-haiku-5.5 (0.10/0.50)
   #   grounder: bytedance/ui-tars-1.5-7b (0.10/0.20)
+  # Timeout por intento y reintentos ante 429/5xx/red (backoff 0,5 s, 1 s, ...).
+  call_timeout_s: 40
+  max_retries: 2
+  # Los precios se usan solo si la respuesta no trae usage.cost (OpenRouter lo trae siempre).
+  # Medido 2026-10-10 con una captura 1280x800 (TestE6_1_S5, OpenRouter):
+  #   openai/gpt-4o-mini        36.884 tokens de entrada, US$ 0,0056 por captura
+  #   anthropic/claude-haiku-5.5 1.412 tokens de entrada, US$ 0,00019 por captura
+  # gpt-4o-mini cuenta la imagen ~26 veces mas cara: 40 pasos romperian el techo de US$ 0,04.
+  # verifier: extraccion de filas y relectura (salida mas larga).
   roles:
-    actor: { model: openai/gpt-4o-mini, temperature: 0, max_tokens: 800 }
-    verifier: { model: openai/gpt-4o-mini, temperature: 0, max_tokens: 400 }
+    actor: { model: anthropic/claude-haiku-5.5, temperature: 0, max_tokens: 700, price_in_usd_per_mtok: 0.10, price_out_usd_per_mtok: 0.50 }
+    verifier: { model: anthropic/claude-haiku-5.5, temperature: 0, max_tokens: 3000, price_in_usd_per_mtok: 0.10, price_out_usd_per_mtok: 0.50 }
 
 policy:
   today_source: app

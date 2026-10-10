@@ -38,3 +38,8 @@ surface:
     # up del clic. 2200 ms cubre eso con margen y cabe en max_wait_ms (2200 + 2
     # comparaciones quietas de 150 ms < 2500).
     change_horizon_ms: 2200
+    # Escribir en un campo no dispara el repintado retrasado de la app (el eco del
+    # texto es inmediato); 800 ms bastan para el ultimo caracter. El resto de
+    # acciones (clic, enter, hover, scroll) mantienen 2200.
+    horizon_by_action:
+      type: 800

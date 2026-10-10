@@ -41,7 +41,7 @@ func NewExecutor(d Driver, s Surface, p Perception) *Executor {
 func (e *Executor) Driver() Driver { return e.d }
 
 // act captura antes, ejecuta la accion y espera estabilidad.
-func (e *Executor) act(ctx context.Context, action func() error) (Outcome, error) {
+func (e *Executor) act(ctx context.Context, kind string, action func() error) (Outcome, error) {
 	start := time.Now()
 	before, err := e.d.Capture(ctx)
 	if err != nil {
@@ -50,7 +50,7 @@ func (e *Executor) act(ctx context.Context, action func() error) (Outcome, error
 	if err := action(); err != nil {
 		return Outcome{Duration: time.Since(start)}, err
 	}
-	res, err := e.set.Wait(ctx, before)
+	res, err := e.set.WaitAction(ctx, before, kind)
 	out := Outcome{Screen: res.Image, Stable: res.Stable, Changed: res.Changed, Settle: res.Elapsed, Duration: time.Since(start)}
 	return out, err
 }
@@ -76,23 +76,23 @@ func (e *Executor) EncodeForModel(img *image.RGBA) (ModelShot, []byte, string, e
 
 // Click hace clic izquierdo en (x,y).
 func (e *Executor) Click(ctx context.Context, x, y int) (Outcome, error) {
-	return e.act(ctx, func() error { return e.in.Click(ctx, x, y, ButtonLeft) })
+	return e.act(ctx, "click", func() error { return e.in.Click(ctx, x, y, ButtonLeft) })
 }
 
 // RightClick hace clic derecho en (x,y).
 func (e *Executor) RightClick(ctx context.Context, x, y int) (Outcome, error) {
-	return e.act(ctx, func() error { return e.in.Click(ctx, x, y, ButtonRight) })
+	return e.act(ctx, "click", func() error { return e.in.Click(ctx, x, y, ButtonRight) })
 }
 
 // DoubleClick hace doble clic en (x,y).
 func (e *Executor) DoubleClick(ctx context.Context, x, y int) (Outcome, error) {
-	return e.act(ctx, func() error { return e.in.DoubleClick(ctx, x, y) })
+	return e.act(ctx, "double_click", func() error { return e.in.DoubleClick(ctx, x, y) })
 }
 
 // Hover mueve el puntero sin botones y espera hover_dwell_ms antes de buscar
 // estabilidad (submenus que abren con hover).
 func (e *Executor) Hover(ctx context.Context, x, y int) (Outcome, error) {
-	return e.act(ctx, func() error {
+	return e.act(ctx, "hover", func() error {
 		if err := e.in.Move(x, y); err != nil {
 			return err
 		}
@@ -104,7 +104,7 @@ func (e *Executor) Hover(ctx context.Context, x, y int) (Outcome, error) {
 // surface.input.replace_text.strategy. Escribir sobre un campo con texto
 // concatena, por eso nunca se escribe sin seleccionar o borrar antes.
 func (e *Executor) TypeReplace(ctx context.Context, x, y int, text string) (Outcome, error) {
-	return e.act(ctx, func() error {
+	return e.act(ctx, "type", func() error {
 		if err := e.clearField(ctx, x, y); err != nil {
 			return err
 		}
@@ -156,7 +156,7 @@ func (e *Executor) clearField(ctx context.Context, x, y int) error {
 
 // Type escribe en el foco actual sin borrar antes (p. ej. un buscador vacio).
 func (e *Executor) Type(ctx context.Context, text string) (Outcome, error) {
-	return e.act(ctx, func() error { return e.in.Type(ctx, text) })
+	return e.act(ctx, "type", func() error { return e.in.Type(ctx, text) })
 }
 
 // Key envia una tecla o combinacion ("enter", "ctrl+a").
@@ -165,7 +165,7 @@ func (e *Executor) Key(ctx context.Context, combo string) (Outcome, error) {
 	if err != nil {
 		return Outcome{}, err
 	}
-	return e.act(ctx, func() error { return e.in.Keys(ctx, keys...) })
+	return e.act(ctx, "key", func() error { return e.in.Keys(ctx, keys...) })
 }
 
 // Scroll desplaza steps pasos en dir; cada paso son
@@ -175,7 +175,7 @@ func (e *Executor) Scroll(ctx context.Context, x, y int, dir string, steps int) 
 	if per < 1 {
 		per = 1
 	}
-	return e.act(ctx, func() error { return e.in.Wheel(ctx, x, y, dir, steps*per) })
+	return e.act(ctx, "scroll", func() error { return e.in.Wheel(ctx, x, y, dir, steps*per) })
 }
 
 // Zoom captura la pantalla actual y amplia la region r (coordenadas de

@@ -43,8 +43,13 @@ Seleccion en runtime:
   SIGECOM y fijar el formato que el agente usa para guardar lo que aprende durante una tarea.
 - `surface.transport` solo admite drivers implementados. El esquema lo restringe con `enum` para
   que una configuracion no prometa algo que el codigo no hace.
-- `models.roles.*.model` arranca en `openai/gpt-4o-mini` porque es el modelo que la pagina de
-  herramientas del evento usa en su verificacion. La eleccion final sale de medir con el harness.
+- `models.roles.*.model` arranco en `openai/gpt-4o-mini` (el modelo de la pagina de herramientas
+  del evento). Desde la epica 6 es `anthropic/claude-haiku-5.5`: con una captura 1280x800,
+  gpt-4o-mini factura ~36.900 tokens de entrada (US$ 0,0056) y haiku ~1.400 (US$ 0,0002), y el
+  techo es US$ 0,04 por tarea. `price_*_usd_per_mtok` solo se usa si OpenRouter no trae
+  `usage.cost`. `models.call_timeout_s` y `models.max_retries` acotan cada llamada.
+- `surface.settle.horizon_by_action` permite acortar `change_horizon_ms` para acciones que no
+  provocan repintado retrasado (p. ej. `type`); una accion sin entrada usa `change_horizon_ms`.
 
 ## Validar
 
