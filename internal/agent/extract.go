@@ -179,7 +179,7 @@ func (g *Aggregator) NoteAdvance() { g.advances++ }
 var (
 	rePageOf    = regexp.MustCompile(`(?i)p(?:á|a)g(?:ina|e)?\.?\s*(\d+)\s*(?:de|of|/)\s*(\d+)`)
 	reIndicator = regexp.MustCompile(`(?i)(\d+)\s*(?:de|of|/)\s*(\d+)`)
-	reRangeHead = regexp.MustCompile(`(?i)\d+\s*(?:-|–|\ba|\bto)\s*$`)
+	reRangeHead = regexp.MustCompile(`(?i)\d+\s*(?:-|–|\ba|\bal|\bto)\s*$`)
 	rePageOnly  = regexp.MustCompile(`(?i)p(?:á|a)g(?:ina|e)?\.?\s*(\d+)`)
 )
 
@@ -343,11 +343,12 @@ func (g *Aggregator) completeness(p Page, repeated bool) (bool, string) {
 	return true, "no hay pagina siguiente habilitada"
 }
 
-var reQuantity = regexp.MustCompile(`\b(?:cuantos|cuantas|total\w*|suma\w*|cantidad(?:es)?)\b`)
+var reQuantity = regexp.MustCompile(`\b(?:cuant[oa]s?|total\w*|suma\w*|cantidad(?:es)?|numero de|cuent[ae]n?|contar|conteo|how (?:many|much))\b`)
 
 // AsksQuantity indica si la orden (o los datos pedidos) piden una cantidad,
-// un total o una suma: "cuantos", "cuantas", "total", "suma", "cantidad", con
-// o sin tildes.
+// un total o una suma: "cuanto(s)", "cuanta(s)", "total", "suma", "cantidad",
+// "numero de", "cuenta", "contar", "conteo", "how many/much", con o sin tildes.
+// Ante la duda exige el agregado: el costo es una fallida honesta, no un falso exito.
 func AsksQuantity(instruction string, asked []string) bool {
 	t := strings.ToLower(instruction + " " + strings.Join(asked, " "))
 	t = strings.NewReplacer("á", "a", "é", "e", "í", "i", "ó", "o", "ú", "u", "Á", "a", "Ú", "u", "Ó", "o").Replace(t)
