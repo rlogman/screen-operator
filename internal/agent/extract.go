@@ -31,8 +31,8 @@ type Page struct {
 // ParsePage interpreta la respuesta del extractor.
 func ParsePage(content string) (Page, error) {
 	var raw struct {
-		Columnas  []string         `json:"columnas"`
-		Filas     []map[string]any `json:"filas"`
+		Columnas  []string          `json:"columnas"`
+		Filas     []json.RawMessage `json:"filas"`
 		Siguiente *struct {
 			Visible    *bool `json:"visible"`
 			Habilitado *bool `json:"habilitado"`
@@ -48,14 +48,32 @@ func ParsePage(content string) (Page, error) {
 		return Page{}, perr("filas", "falta")
 	}
 	p := Page{Columns: raw.Columnas}
-	for _, f := range raw.Filas {
+	for i, f := range raw.Filas {
 		r := Row{}
-		for k, v := range f {
-			if v == nil {
-				r[strings.TrimSpace(k)] = ""
-				continue
+		var obj map[string]any
+		var list []any
+		d := json.NewDecoder(strings.NewReader(string(f)))
+		d.UseNumber()
+		if err := d.Decode(&obj); err == nil {
+			for k, v := range obj {
+				r[strings.TrimSpace(k)] = cell(v)
 			}
-			r[strings.TrimSpace(k)] = strings.TrimSpace(fmt.Sprint(v))
+		} else {
+			d = json.NewDecoder(strings.NewReader(string(f)))
+			d.UseNumber()
+			if err := d.Decode(&list); err != nil {
+				return Page{}, perr("filas", "la fila %d no es una lista ni un objeto", i+1)
+			}
+			if len(raw.Columnas) == 0 {
+				return Page{}, perr("columnas", "falta (las filas son listas)")
+			}
+			for j, v := range list {
+				col := fmt.Sprintf("col%d", j+1)
+				if j < len(raw.Columnas) {
+					col = strings.TrimSpace(raw.Columnas[j])
+				}
+				r[col] = cell(v)
+			}
 		}
 		p.Rows = append(p.Rows, r)
 	}
@@ -74,6 +92,13 @@ func ParsePage(content string) (Page, error) {
 		p.Indicator = strings.TrimSpace(fmt.Sprint(raw.Pagina))
 	}
 	return p, nil
+}
+
+func cell(v any) string {
+	if v == nil {
+		return ""
+	}
+	return strings.TrimSpace(fmt.Sprint(v))
 }
 
 // Aggregator acumula filas de una lista paginada.

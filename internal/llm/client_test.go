@@ -157,6 +157,24 @@ func TestE6_1_S3_TimeoutRespectsTaskContext(t *testing.T) {
 	}
 }
 
+// OpenRouter responde 400 a una parte de texto sin "text" (visto en vivo cuando
+// el modelo devolvio contenido vacio y se reenvio en la reparacion).
+func TestEmptyTextPartStillCarriesText(t *testing.T) {
+	var body string
+	c := NewClient(Options{BaseURL: "https://x/api/v1", HTTP: &http.Client{Transport: roundTrip(func(r *http.Request) (*http.Response, error) {
+		b, _ := io.ReadAll(r.Body)
+		body = string(b)
+		return jsonResp(200, okBody), nil
+	})}})
+	_, err := c.Chat(context.Background(), Request{Model: "m", Messages: []Message{{Role: "assistant", Parts: []Part{TextPart("")}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(body, `{"type":"text","text":"(vacio)"}`) {
+		t.Fatalf("cuerpo = %s", body)
+	}
+}
+
 func TestE6_1_S4_BudgetExhaustedRejectsWithoutCalling(t *testing.T) {
 	calls := 0
 	c := NewClient(Options{BaseURL: "https://x/api/v1", HTTP: &http.Client{Transport: roundTrip(func(*http.Request) (*http.Response, error) {

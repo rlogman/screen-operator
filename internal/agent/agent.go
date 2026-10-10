@@ -396,7 +396,7 @@ func (a *Agent) ask(ctx context.Context, purpose string, role llm.Role, user llm
 	}
 	sys := llm.Message{Role: "system", Parts: []llm.Part{llm.TextPart(SystemPrompt())}}
 	req := llm.Request{Model: role.Model, Temperature: role.Temperature, MaxTokens: role.MaxTokens, JSON: true, Purpose: purpose,
-		Messages: []llm.Message{sys, user}}
+		ReasoningEffort: role.Reasoning, Messages: []llm.Message{sys, user}}
 	var total llm.Usage
 	resp, err := a.LLM.Chat(ctx, req)
 	total = addUsage(total, resp.Usage)
@@ -407,7 +407,8 @@ func (a *Agent) ask(ctx context.Context, purpose string, role llm.Role, user llm
 	if perr == nil {
 		return total, nil
 	}
-	a.logInfo("salida invalida del modelo; se pide reparacion", "proposito", purpose, "error", perr.Error())
+	a.logInfo("salida invalida del modelo; se pide reparacion", "proposito", purpose, "error", perr.Error(),
+		"fin", resp.FinishReason, "tokens_salida", resp.Usage.CompletionTokens, "tokens_razonamiento", resp.Usage.ReasoningTokens, "contenido", truncate(resp.Content, 400))
 	req.Purpose = purpose + " (reparacion)"
 	req.Messages = []llm.Message{sys, user,
 		{Role: "assistant", Parts: []llm.Part{llm.TextPart(truncate(resp.Content, 2000))}},
@@ -418,6 +419,8 @@ func (a *Agent) ask(ctx context.Context, purpose string, role llm.Role, user llm
 		return total, err
 	}
 	if err := parse(resp.Content); err != nil {
+		a.logInfo("salida invalida tras la reparacion", "proposito", purpose, "error", err.Error(),
+			"fin", resp.FinishReason, "tokens_salida", resp.Usage.CompletionTokens, "tokens_razonamiento", resp.Usage.ReasoningTokens, "contenido", truncate(resp.Content, 400))
 		return total, err
 	}
 	return total, nil
@@ -670,6 +673,9 @@ func (a *Agent) doScreenAction(ctx context.Context, act Action) error {
 	if !out.Stable {
 		result += "; la pantalla seguia cambiando (se vuelve a capturar)"
 	}
+	if act.Kind == KindCommit && !act.ConfirmDialog {
+		result += "; si aparecio un dialogo de confirmacion, leelo: confirmalo solo si describe exactamente la accion pedida"
+	}
 	reason := ""
 	if act.Reason != "" {
 		reason = " (" + truncate(act.Reason, 120) + ")"
@@ -811,7 +817,7 @@ func (a *Agent) final(_ context.Context, done bool, reason string, ids []string,
 			r.Changed = f.Changed
 			r.Answer = f.Data
 			if f.Evidence != "" {
-				r.Notes = append(r.Notes, "Verificación: "+f.Evidence+".")
+				r.Notes = append(r.Notes, "Verificación: "+strings.TrimRight(f.Evidence, ". ")+".")
 			}
 		}
 		ids = append(append([]string(nil), f.Identifiers...), ids...)

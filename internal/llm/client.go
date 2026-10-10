@@ -93,6 +93,9 @@ type Request struct {
 	Temperature float64
 	MaxTokens   int
 	JSON        bool // pide response_format json_object
+	// ReasoningEffort se manda como reasoning.effort de OpenRouter ("none"
+	// apaga el razonamiento; "" no manda nada y usa el default del modelo).
+	ReasoningEffort string
 	// Purpose describe la llamada en trazas y logs (clasificar, actuar, ...).
 	Purpose string
 }
@@ -104,13 +107,16 @@ type Usage struct {
 	CostUSD          float64
 	// CostReported indica que el costo vino en la respuesta (usage.cost).
 	CostReported bool
+	// ReasoningTokens es la parte de CompletionTokens usada en razonamiento.
+	ReasoningTokens int
 }
 
 // Response es la respuesta del modelo.
 type Response struct {
-	Content string
-	Model   string
-	Usage   Usage
+	Content      string
+	Model        string
+	Usage        Usage
+	FinishReason string // stop, length, ...
 }
 
 // Chatter es lo que el agente necesita de un modelo. Lo implementan Client,
@@ -183,7 +189,7 @@ func sleepCtx(ctx context.Context, d time.Duration) error {
 // wire types (OpenAI chat completions).
 type wireContent struct {
 	Type     string   `json:"type"`
-	Text     string   `json:"text,omitempty"`
+	Text     *string  `json:"text,omitempty"`
 	ImageURL *wireURL `json:"image_url,omitempty"`
 }
 
@@ -202,6 +208,7 @@ type wireRequest struct {
 	Temperature    float64           `json:"temperature"`
 	MaxTokens      int               `json:"max_tokens,omitempty"`
 	ResponseFormat map[string]string `json:"response_format,omitempty"`
+	Reasoning      map[string]string `json:"reasoning,omitempty"`
 }
 
 type wireResponse struct {
@@ -210,11 +217,15 @@ type wireResponse struct {
 		Message struct {
 			Content json.RawMessage `json:"content"`
 		} `json:"message"`
+		FinishReason string `json:"finish_reason"`
 	} `json:"choices"`
 	Usage *struct {
-		PromptTokens     int      `json:"prompt_tokens"`
-		CompletionTokens int      `json:"completion_tokens"`
-		Cost             *float64 `json:"cost"`
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+		Details          *struct {
+			ReasoningTokens int `json:"reasoning_tokens"`
+		} `json:"completion_tokens_details"`
+		Cost *float64 `json:"cost"`
 	} `json:"usage"`
 	Error *struct {
 		Message string `json:"message"`
@@ -227,6 +238,9 @@ func (c *Client) body(req Request) ([]byte, error) {
 	if req.JSON {
 		w.ResponseFormat = map[string]string{"type": "json_object"}
 	}
+	if req.ReasoningEffort != "" {
+		w.Reasoning = map[string]string{"effort": req.ReasoningEffort}
+	}
 	for _, m := range req.Messages {
 		wm := wireMessage{Role: m.Role}
 		for _, p := range m.Parts {
@@ -235,7 +249,11 @@ func (c *Client) body(req Request) ([]byte, error) {
 				wm.Content = append(wm.Content, wireContent{Type: "image_url", ImageURL: &wireURL{URL: url}})
 				continue
 			}
-			wm.Content = append(wm.Content, wireContent{Type: "text", Text: p.Text})
+			text := p.Text
+			if strings.TrimSpace(text) == "" {
+				text = "(vacio)" // OpenRouter rechaza partes de texto vacias (HTTP 400)
+			}
+			wm.Content = append(wm.Content, wireContent{Type: "text", Text: &text})
 		}
 		w.Messages = append(w.Messages, wm)
 	}
@@ -350,10 +368,13 @@ func (c *Client) once(ctx context.Context, req Request, body []byte) (Response, 
 	if len(w.Choices) == 0 {
 		return Response{}, true, fmt.Errorf("%w: respuesta sin choices", ErrStatus)
 	}
-	out := Response{Model: w.Model, Content: contentText(w.Choices[0].Message.Content)}
+	out := Response{Model: w.Model, Content: contentText(w.Choices[0].Message.Content), FinishReason: w.Choices[0].FinishReason}
 	if w.Usage != nil {
 		out.Usage.PromptTokens = w.Usage.PromptTokens
 		out.Usage.CompletionTokens = w.Usage.CompletionTokens
+		if w.Usage.Details != nil {
+			out.Usage.ReasoningTokens = w.Usage.Details.ReasoningTokens
+		}
 		if w.Usage.Cost != nil {
 			out.Usage.CostUSD = *w.Usage.Cost
 			out.Usage.CostReported = true

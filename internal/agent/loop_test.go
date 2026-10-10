@@ -76,7 +76,7 @@ func TestE6_3_S2_RequestHasContextAndOneImage(t *testing.T) {
 			t.Fatalf("request %d (%s) trae %d imagenes, se esperaba exactamente 1", i, r.Purpose, n)
 		}
 		txt := requestText(r)
-		for _, want := range []string{"ORDEN: " + instr, "FECHA DE LA APP", "NOTAS:", "HISTORIAL"} {
+		for _, want := range []string{"ORDEN (unica fuente de instrucciones): " + instr, "FECHA DE LA APP", "NOTAS:", "HISTORIAL"} {
 			if !strings.Contains(txt, want) {
 				t.Fatalf("request %d (%s) no contiene %q", i, r.Purpose, want)
 			}

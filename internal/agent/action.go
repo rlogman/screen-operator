@@ -133,7 +133,8 @@ type Action struct {
 	Purpose string // conteo, suma, candidatos, datos
 
 	// commit
-	Target string
+	Target        string
+	ConfirmDialog bool // confirma el dialogo que abrio un commit anterior sobre el mismo objetivo
 
 	// finish (solicitud: el estado final lo fija el loop tras verificar)
 	Finish *FinishRequest
@@ -232,6 +233,7 @@ type rawAction struct {
 	Cambios     []string          `json:"cambios"`
 	Verificado  *bool             `json:"verificado"`
 	Evidencia   string            `json:"evidencia"`
+	Dialogo     *bool             `json:"dialogo"`
 	unknownKeys []string
 }
 
@@ -240,6 +242,7 @@ var knownKeys = map[string]bool{
 	"text": true, "replace": true, "combo": true, "direction": true, "amount": true, "what": true, "key": true,
 	"filters": true, "purpose": true, "target": true, "estado": true, "datos": true, "identificadores": true,
 	"agregado": true, "entidad": true, "id_registro": true, "cambios": true, "verificado": true, "evidencia": true,
+	"dialogo": true,
 }
 
 // Parse valida la salida del modelo contra el esquema y convierte las
@@ -401,6 +404,7 @@ func Parse(content string, v View) (Action, error) {
 		if a.Target == "" {
 			return Action{}, perr("target", "falta (identificador del registro afectado)")
 		}
+		a.ConfirmDialog = r.Dialogo != nil && *r.Dialogo
 	case KindFinish:
 		f := &FinishRequest{Reason: firstNonEmpty(r.Razon, r.Reason), Aggregate: strings.ToLower(strings.TrimSpace(r.Agregado)),
 			Entity: strings.TrimSpace(r.Entidad), EntityID: strings.TrimSpace(r.EntidadID), Changed: r.Cambios,

@@ -64,7 +64,7 @@ func TestE6_1_S5_LiveMultimodalJSON(t *testing.T) {
 		t.Run(model, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 			defer cancel()
-			resp, err := c.Chat(ctx, Request{Model: model, JSON: true, MaxTokens: 300, Messages: []Message{
+			resp, err := c.Chat(ctx, Request{Model: model, JSON: true, MaxTokens: 300, ReasoningEffort: os.Getenv("SO_E6_1_REASONING"), Messages: []Message{
 				{Role: "system", Parts: []Part{TextPart("Responde solo con un objeto JSON.")}},
 				{Role: "user", Parts: []Part{TextPart(`Describe la captura en JSON: {"titulo": "...", "fecha_visible": "DD/MM/AAAA o null", "menus": ["..."]}`),
 					ImagePart(jpg, "image/jpeg")}},
@@ -76,8 +76,9 @@ func TestE6_1_S5_LiveMultimodalJSON(t *testing.T) {
 			if err := json.Unmarshal([]byte(StripFences(resp.Content)), &v); err != nil {
 				t.Fatalf("no es JSON parseable: %v\n%s", err, resp.Content)
 			}
-			t.Logf("modelo=%s tokens_in=%d tokens_out=%d costo=%.6f reportado=%v json=%v",
-				resp.Model, resp.Usage.PromptTokens, resp.Usage.CompletionTokens, resp.Usage.CostUSD, resp.Usage.CostReported, v)
+			t.Logf("modelo=%s tokens_in=%d tokens_out=%d razonamiento=%d fin=%s costo=%.6f reportado=%v json=%v",
+				resp.Model, resp.Usage.PromptTokens, resp.Usage.CompletionTokens, resp.Usage.ReasoningTokens, resp.FinishReason,
+				resp.Usage.CostUSD, resp.Usage.CostReported, v)
 		})
 	}
 }

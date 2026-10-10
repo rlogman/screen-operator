@@ -71,8 +71,8 @@ models:
   # gpt-4o-mini cuenta la imagen ~26 veces mas cara: 40 pasos romperian el techo de US$ 0,04.
   # verifier: extraccion de filas y relectura (salida mas larga).
   roles:
-    actor: { model: anthropic/claude-haiku-5.5, temperature: 0, max_tokens: 700, price_in_usd_per_mtok: 0.10, price_out_usd_per_mtok: 0.50 }
-    verifier: { model: anthropic/claude-haiku-5.5, temperature: 0, max_tokens: 3000, price_in_usd_per_mtok: 0.10, price_out_usd_per_mtok: 0.50 }
+    actor: { model: anthropic/claude-haiku-5.5, temperature: 0, max_tokens: 1000, reasoning_effort: none, price_in_usd_per_mtok: 0.10, price_out_usd_per_mtok: 0.50 }
+    verifier: { model: anthropic/claude-haiku-5.5, temperature: 0, max_tokens: 4000, reasoning_effort: none, price_in_usd_per_mtok: 0.10, price_out_usd_per_mtok: 0.50 }
 
 policy:
   today_source: app

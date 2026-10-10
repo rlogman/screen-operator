@@ -15,6 +15,7 @@ type Role struct {
 	MaxTokens   int     `json:"max_tokens"`
 	PriceIn     float64 `json:"price_in_usd_per_mtok"`
 	PriceOut    float64 `json:"price_out_usd_per_mtok"`
+	Reasoning   string  `json:"reasoning_effort"`
 }
 
 // Models es models.* de la configuracion.

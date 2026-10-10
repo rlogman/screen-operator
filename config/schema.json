@@ -678,6 +678,10 @@
           "description": "Precio de salida en US$ por millon de tokens.",
           "type": "number",
           "minimum": 0
+        },
+        "reasoning_effort": {
+          "description": "reasoning.effort de OpenRouter. none apaga el razonamiento (los tokens de razonamiento cuentan dentro de max_tokens).",
+          "enum": ["none", "minimal", "low", "medium", "high"]
         }
       }
     },
