@@ -7,3 +7,7 @@ Cada brief de épica que toque estos puntos debe resolverlos y testearlos.
 - should-fix: `internal/tasks/gate.go:35-49` sostiene el mutex durante `sess.Send`; el adaptador debe poner write deadline / respetar ctx en Send y Close para que el reporte no se cuelgue. Test con un driver que bloquea.
 - should-fix: el `recover` solo cubre el Runner (`manager.go:242-249`); agregar recover en `work()` para Dial y Close.
 - nit: el redactor de tarea no conoce la URL cruda; errores del driver no deben incluir `user:pass@` ni query (`manager.go:237`).
+
+## Del validador de so-epic-2 (para la épica 6, loop del agente)
+- should-fix: el horizonte de estabilidad es único para todas las primitivas (`internal/screen/executor.go:37,53`); falta un override por tipo de acción (p. ej. `TypeReplace` no necesita 2,2 s). Hacerlo configurable en `surface.settle` sin romper el schema ni los tests E2.
+- should-fix: con `change_horizon_ms` 2200 y `max_wait_ms` 2500, un repintado tardío devuelve `Stable=false`. El loop debe tratar `Stable=false` (por ejemplo, volver a capturar antes de decidir) y no actuar sobre una captura no estable.
