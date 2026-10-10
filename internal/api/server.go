@@ -25,6 +25,14 @@ type TaskService interface {
 	Get(id string) (tasks.Snapshot, bool)
 }
 
+// MetricsService es opcional: si el TaskService lo implementa, la API expone
+// GET <ruta de get>/metrics (por defecto /tasks/{task_id}/metrics) con el mismo
+// Bearer. Es diagnostico para el harness; no cambia GET /tasks/{id}, que sigue
+// respondiendo exactamente estado y resumen.
+type MetricsService interface {
+	Metrics(id string) (tasks.Usage, bool)
+}
+
 // Server sirve el contrato del evento.
 type Server struct {
 	c     Contract
@@ -49,6 +57,11 @@ func NewServer(c Contract, token string, svc TaskService, log *slog.Logger) (*Se
 	s.mux.HandleFunc(c.Health.Method+" "+c.Health.Path, s.health)
 	s.mux.Handle(c.Create.Method+" "+c.Create.Path, s.auth(http.HandlerFunc(s.create)))
 	s.mux.Handle(c.Get.Method+" "+c.Get.Path, s.auth(http.HandlerFunc(s.get)))
+	if ms, ok := svc.(MetricsService); ok {
+		s.mux.Handle(http.MethodGet+" "+c.Get.Path+"/metrics", s.auth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			s.metrics(ms, w, r)
+		})))
+	}
 	return s, nil
 }
 
@@ -178,6 +191,22 @@ func (s *Server) get(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{
 		s.c.StatusField:  s.c.StatusValues[snap.Status],
 		s.c.SummaryField: snap.Summary,
+	})
+}
+
+func (s *Server) metrics(ms MetricsService, w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue(s.c.getParam())
+	u, ok := ms.Metrics(id)
+	if !ok {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "tarea desconocida"})
+		return
+	}
+	setTaskID(w, id)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"pasos":          u.Steps,
+		"tokens_entrada": u.TokensIn,
+		"tokens_salida":  u.TokensOut,
+		"costo_usd":      u.CostUSD,
 	})
 }
 

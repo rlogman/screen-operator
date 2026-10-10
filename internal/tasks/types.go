@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"net/url"
+	"sync"
 	"time"
 )
 
@@ -98,6 +99,8 @@ type Job struct {
 	Request Request
 	Input   *Gate
 	Log     *slog.Logger
+	// Usage acumula pasos, tokens y costo de la tarea (GET /tasks/{id}/metrics).
+	Usage *UsageMeter
 }
 
 // Runner ejecuta una tarea. Debe respetar ctx: cuando se cancela (deadline,
@@ -149,3 +152,42 @@ type DialerFunc func(ctx context.Context, req Request) (Session, error)
 
 // Dial implementa Dialer.
 func (f DialerFunc) Dial(ctx context.Context, req Request) (Session, error) { return f(ctx, req) }
+
+// Usage es lo que consumio una tarea: pasos del agente, tokens y costo. Es
+// diagnostico (GET /tasks/{id}/metrics), no parte del contrato del evento.
+type Usage struct {
+	Steps     int
+	TokensIn  int
+	TokensOut int
+	CostUSD   float64
+}
+
+// UsageMeter acumula el Usage de una tarea. Es seguro para uso concurrente y
+// un puntero nil ignora todo.
+type UsageMeter struct {
+	mu sync.Mutex
+	u  Usage
+}
+
+// Add suma d al acumulado.
+func (m *UsageMeter) Add(d Usage) {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.u.Steps += d.Steps
+	m.u.TokensIn += d.TokensIn
+	m.u.TokensOut += d.TokensOut
+	m.u.CostUSD += d.CostUSD
+}
+
+// Get devuelve el acumulado.
+func (m *UsageMeter) Get() Usage {
+	if m == nil {
+		return Usage{}
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.u
+}

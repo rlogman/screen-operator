@@ -71,6 +71,7 @@ type task struct {
 	log     *slog.Logger
 	red     *Redactor
 	created time.Time
+	usage   *UsageMeter
 	// protegidos por Manager.mu
 	status   Status
 	summary  string
@@ -145,6 +146,7 @@ func (m *Manager) Submit(req Request) (string, error) {
 		log:     WithSecrets(m.o.Logger, secrets...).With(LogKeyTaskID, id),
 		red:     m.o.Redactor.With(secrets...),
 		created: now,
+		usage:   &UsageMeter{},
 		status:  StatusRunning,
 	}
 	m.tasks[id] = t
@@ -179,6 +181,17 @@ func (m *Manager) Get(id string) (Snapshot, bool) {
 		return Snapshot{}, false
 	}
 	return Snapshot{ID: t.id, Status: t.status, Summary: t.summary, CreatedAt: t.created, FinishedAt: t.finished}, true
+}
+
+// Metrics devuelve el consumo acumulado de una tarea (diagnostico).
+func (m *Manager) Metrics(id string) (Usage, bool) {
+	m.mu.Lock()
+	t, ok := m.tasks[id]
+	m.mu.Unlock()
+	if !ok {
+		return Usage{}, false
+	}
+	return t.usage.Get(), true
 }
 
 // Shutdown cancela todas las tareas y espera a que sus sesiones se cierren o a ctx.
@@ -242,7 +255,7 @@ func (m *Manager) work(ctx context.Context, cancel context.CancelCauseFunc, t *t
 	gate := newGate(ctx, sess)
 
 	// 3. Ejecutar el agente. Un panic se convierte en fallida generica.
-	job := &Job{ID: t.id, Request: t.req, Input: gate, Log: t.log}
+	job := &Job{ID: t.id, Request: t.req, Input: gate, Log: t.log, Usage: t.usage}
 	resCh := make(chan Result, 1)
 	go func() {
 		defer func() {

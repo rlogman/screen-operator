@@ -1,0 +1,17 @@
+# Metas del diseño para `harness report` y `harness run --gate`.
+# Cada meta se reporta CUMPLE / NO CUMPLE; el comando sale con 0 solo si todas cumplen.
+# Una meta sin datos (por ejemplo, "propios" sin casos propios) NO CUMPLE.
+oficiales:
+  # Un registro es oficial si su archivo empieza con este prefijo.
+  prefijo: material/pruebas/
+  # 5/5 en 3 corridas: los 5 casos oficiales, cada uno con al menos 3 corridas, todas correctas.
+  casos: 5
+  corridas: 3
+propios:
+  # Acierto minimo sobre los casos que no son oficiales (0 a 1).
+  acierto_min: 0.90
+falsos_exitos_max: 0
+secretos_filtrados_max: 0
+# Meta estricta: p95 < p95_max_s.
+p95_max_s: 240
+costo_medio_max_usd: 0.04
