@@ -5,6 +5,7 @@ package harness
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -16,9 +17,43 @@ import (
 	"time"
 )
 
+// loadEnvFile carga KEY=VALUE de SO_ENV_FILE (si esta definida) sin pisar
+// variables ya presentes y sin imprimir valores. Alternativa a
+// `set -a; . .env; set +a` donde el shell no permite hacer source.
+func loadEnvFile(t *testing.T) {
+	t.Helper()
+	p := os.Getenv("SO_ENV_FILE")
+	if p == "" {
+		return
+	}
+	b, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatalf("SO_ENV_FILE ilegible: %v", err)
+	}
+	for _, line := range strings.Split(string(b), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		line = strings.TrimPrefix(line, "export ")
+		k, v, ok := strings.Cut(line, "=")
+		if !ok {
+			continue
+		}
+		k, v = strings.TrimSpace(k), strings.TrimSpace(v)
+		if len(v) >= 2 && (v[0] == '"' && v[len(v)-1] == '"' || v[0] == '\'' && v[len(v)-1] == '\'') {
+			v = v[1 : len(v)-1]
+		}
+		if _, set := os.LookupEnv(k); !set {
+			t.Setenv(k, v)
+		}
+	}
+}
+
 // desktopEnv lee las variables del escritorio real o salta el test.
 func desktopEnv(t *testing.T) (base, ws, password, token string) {
 	t.Helper()
+	loadEnvFile(t)
 	raw, password, token := os.Getenv("SO_DESKTOP_URL"), os.Getenv("SO_DESKTOP_PASSWORD"), os.Getenv("SO_DESKTOP_TOKEN")
 	if raw == "" || password == "" || token == "" {
 		t.Skip("ENVIRONMENTAL: faltan SO_DESKTOP_URL, SO_DESKTOP_PASSWORD o SO_DESKTOP_TOKEN (cargar .env)")
@@ -134,4 +169,50 @@ func TestE5_1_S5_DesktopRunRecordsRealCheck(t *testing.T) {
 		}
 	}
 	t.Logf("E3 real: estado=%s check=%+v metricas=%+v", rec.Estado, rec.Check, rec.Metricas)
+}
+
+// probeCase es una prueba propia cuyo diff_esperado el estado inicial no cumple.
+const probeCase = `{"id":"SO-PROBE-1","nivel":"facil","categoria":"robustez","instruccion":"Prueba propia del harness: cambia la dirección de CL-0007.","estado_esperado":"terminada","diff_esperado":[{"entidad":"clientes","id":"CL-0007","campo":"direccion","accion":"update","valor":"Calle 1 # 1-01 SO-PROBE"}],"lista_blanca":[]}`
+
+func TestE5_4_S1_DesktopCheckAcceptsOwnCase(t *testing.T) {
+	base, _, _, dtoken := desktopEnv(t)
+	d := &Desktop{BaseURL: base, Token: dtoken}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	if err := d.Reset(ctx); err != nil {
+		t.Logf("reset fallo, reintento: %v", err)
+		if err := d.Reset(ctx); err != nil {
+			t.Fatalf("ENVIRONMENTAL: /__reset: %v", err)
+		}
+	}
+	defer d.Reset(context.Background())
+
+	res, err := d.Check(ctx, []byte(probeCase))
+	if err == nil {
+		t.Logf("/__check acepto la prueba propia: pass=%v checks=%+v", res.Pass, res.Checks)
+		if res.Pass || len(res.Checks) == 0 {
+			t.Fatalf("tras un reset, un diff_esperado no cumplido deberia dar pass=false con checks: %+v", res)
+		}
+	} else {
+		t.Logf("/__check rechazo la prueba propia: %v (sin check de estado: %v)", err, errors.Is(err, ErrCheckUnsupported))
+	}
+
+	// Informativo: que devuelve /__check ante una prueba que no entiende.
+	for _, body := range []string{`{}`, `{"id":"SO-PROBE-2","estado_esperado":"terminada","diff_esperado":[{"entidad":"no_existe","id":"X-1","campo":"y","accion":"update","valor":"z"}],"lista_blanca":[]}`} {
+		r2, e2 := d.Check(ctx, []byte(body))
+		t.Logf("/__check con %.40s...: resultado=%+v error=%v", body, r2, e2)
+	}
+
+	// El resultado queda registrado en docs/assumptions.md.
+	doc, rerr := os.ReadFile(filepath.Join("..", "..", "docs", "assumptions.md"))
+	if rerr != nil {
+		t.Fatalf("falta docs/assumptions.md: %v", rerr)
+	}
+	want := "acepta pruebas propias: sí"
+	if err != nil {
+		want = "acepta pruebas propias: no"
+	}
+	if !strings.Contains(string(doc), "[E5.4-S1]") || !strings.Contains(string(doc), want) {
+		t.Fatalf("docs/assumptions.md no registra el resultado observado (%q)", want)
+	}
 }
