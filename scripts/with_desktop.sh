@@ -11,9 +11,11 @@ for i in $(seq 1 900); do
     "$@"
     exit $?
   fi
-  pid=$(cut -d' ' -f1 "$LOCK/owner" 2>/dev/null || true)
-  if [ -n "$pid" ] && ! kill -0 "$pid" 2>/dev/null; then
-    echo "lock huérfano (PID $pid ya no existe): se libera" >&2
+  # Lock huérfano: solo por antigüedad. No usar kill -0: dentro del sandbox no ve
+  # los procesos de otros agentes y daría por muerto a un dueño vivo.
+  age=$(( $(date +%s) - $(stat -f %m "$LOCK" 2>/dev/null || date +%s) ))
+  if [ "$age" -gt 1800 ]; then
+    echo "lock con más de 30 min ($(cat "$LOCK/owner" 2>/dev/null)): se libera" >&2
     rm -rf "$LOCK"
     continue
   fi
