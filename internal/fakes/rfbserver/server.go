@@ -118,6 +118,7 @@ type Server struct {
 	downAt  map[uint8]time.Time
 	downXY  map[uint8]image.Point
 	onClick ClickFunc
+	onFeed  ClickFunc
 	animate bool
 	frame   int
 	field   *field
@@ -178,6 +179,16 @@ func (s *Server) Close() {
 func (s *Server) OnClick(fn ClickFunc) {
 	s.mu.Lock()
 	s.onClick = fn
+	s.mu.Unlock()
+}
+
+// OnClickFeedback fija un efecto inmediato de los clics aceptados del boton 1,
+// que se pinta sin esperar RepaintDelay (p. ej. el resaltado de un item de
+// menu). Junto con OnClick emula la trampa "feedback inmediato pequeno y luego
+// el repintado real con retraso" del escritorio.
+func (s *Server) OnClickFeedback(fn ClickFunc) {
+	s.mu.Lock()
+	s.onFeed = fn
 	s.mu.Unlock()
 }
 
@@ -662,6 +673,9 @@ func (s *Server) acceptClick(c Click) {
 		} else {
 			s.accepts = nil
 		}
+	}
+	if fb := s.onFeed; fb != nil {
+		go fb(s, c)
 	}
 	fn := s.onClick
 	if fn == nil {

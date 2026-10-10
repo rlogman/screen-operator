@@ -12,7 +12,8 @@ import (
 
 // Escenarios contra el escritorio real. Leen SO_DESKTOP_URL, SO_DESKTOP_PASSWORD
 // y SO_DESKTOP_TOKEN del entorno; sin ellos el test se salta. Las capturas van a
-// t.TempDir(), nunca a testdata.
+// t.TempDir(), nunca a testdata. Se corren solo con `make test-desktop` (-p 1:
+// todos los paquetes comparten el escritorio y en paralelo se pisan).
 func desktopVars(t *testing.T, keys ...string) map[string]string {
 	t.Helper()
 	m := map[string]string{}

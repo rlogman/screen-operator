@@ -11,7 +11,8 @@ import (
 )
 
 // Escenarios contra el escritorio real. Leen SO_DESKTOP_URL y SO_DESKTOP_PASSWORD
-// del entorno; sin ellos el test se salta. Ningun valor se imprime.
+// del entorno; sin ellos el test se salta. Ningun valor se imprime. Se corren
+// solo con `make test-desktop` (-p 1: todos los paquetes comparten el escritorio).
 func desktopEnv(t *testing.T) (string, string) {
 	t.Helper()
 	u, p := os.Getenv("SO_DESKTOP_URL"), os.Getenv("SO_DESKTOP_PASSWORD")

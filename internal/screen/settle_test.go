@@ -119,3 +119,72 @@ func TestE2_5_S4_UnPixelBajoElUmbralEsEstable(t *testing.T) {
 		t.Fatalf("un cursor que parpadea impidio la estabilidad: %+v", res)
 	}
 }
+
+// Trampa del escritorio real (iteracion 2): el clic produce de inmediato un
+// cambio pequeno pero mayor que diff_threshold (el resaltado de un item de
+// menu, 6.000 px) y el repintado real llega 800 ms despues. La espera no puede
+// darse por estable con el resaltado: tiene que devolver el repintado.
+func TestE2_5_S1_ImmediateFeedbackThenRepaint(t *testing.T) {
+	surf, _ := kiosk(t) // valores reales de vnc-kiosk
+	highlight := color.RGBA{60, 90, 200, 255}
+	srv, d := fakeDesktop(t, rfbserver.Options{RepaintDelay: 800 * time.Millisecond, MinClickHold: 100 * time.Millisecond})
+	srv.OnClickFeedback(func(s *rfbserver.Server, c rfbserver.Click) {
+		s.FillRect(image.Rect(200, 70, 400, 100), highlight)
+	})
+	srv.OnClick(func(s *rfbserver.Server, c rfbserver.Click) {
+		s.FillRect(image.Rect(300, 200, 900, 600), green)
+	})
+	ctx := context.Background()
+	before, err := d.Capture(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := NewInput(d, surf.Input).Click(ctx, 500, 300, 0); err != nil {
+		t.Fatal(err)
+	}
+	res, err := NewSettler(d, surf.Settle).Wait(ctx, before)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := res.Image.RGBAAt(250, 80); got != highlight {
+		t.Fatalf("el feedback inmediato no aparece en la captura final (%v): el falso no emula la trampa", got)
+	}
+	if got := res.Image.RGBAAt(600, 400); got != green {
+		t.Fatalf("la espera termino con el feedback inmediato y sin el repintado: (600,400)=%v, %+v", got, res)
+	}
+	if !res.Stable || !res.Changed {
+		t.Fatalf("resultado %+v, se esperaba estable y con cambio", res)
+	}
+	if res.Elapsed > ms(surf.Settle.MaxWaitMS)+ms(surf.Settle.PollMS) {
+		t.Fatalf("la espera de %v supera max_wait_ms", res.Elapsed)
+	}
+}
+
+// Un cambio tardio (despues de que ya hubo quietud) reinicia la ventana de
+// quietud: la espera devuelve el ultimo repintado y no corta antes de
+// max_wait_ms aunque el repintado llegue cerca del horizonte.
+func TestSettleLateChangeRestartsQuietWindow(t *testing.T) {
+	surf, _ := kiosk(t)
+	srv, d := fakeDesktop(t, rfbserver.Options{RepaintDelay: 950 * time.Millisecond, MinClickHold: 100 * time.Millisecond})
+	srv.OnClickFeedback(func(s *rfbserver.Server, c rfbserver.Click) {
+		s.FillRect(image.Rect(200, 70, 400, 100), color.RGBA{60, 90, 200, 255})
+	})
+	srv.OnClick(func(s *rfbserver.Server, c rfbserver.Click) {
+		s.FillRect(image.Rect(300, 200, 900, 600), green)
+	})
+	ctx := context.Background()
+	before, err := d.Capture(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := NewInput(d, surf.Input).Click(ctx, 500, 300, 0); err != nil {
+		t.Fatal(err)
+	}
+	res, err := NewSettler(d, surf.Settle).Wait(ctx, before)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := res.Image.RGBAAt(600, 400); got != green || !res.Stable {
+		t.Fatalf("repintado a 950 ms no devuelto: (600,400)=%v, %+v", got, res)
+	}
+}

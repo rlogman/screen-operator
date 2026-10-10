@@ -57,12 +57,16 @@ func Same(a, b *image.RGBA, threshold float64) bool {
 //   - paso min_wait_ms desde el inicio;
 //   - las ultimas stable_frames comparaciones entre capturas consecutivas no
 //     superan diff_threshold;
-//   - si before no es nil (captura previa a una accion), ya se vio un cambio
-//     respecto a before o paso change_horizon_ms (el repintado retrasado del
-//     escritorio llega antes de ese horizonte).
+//   - si before no es nil (captura previa a una accion), paso change_horizon_ms
+//     desde el inicio, haya habido cambio o no. El escritorio da feedback
+//     inmediato (resaltado, hover) y repinta de verdad hasta 1 s despues: un
+//     cambio temprano no prueba que el repintado ya llego. Un cambio que llega
+//     tarde pone a cero la racha de comparaciones quietas, asi que la ventana
+//     de quietud se reinicia y la captura devuelta es la del ultimo repintado.
 //
 // Termina a mas tardar en max_wait_ms; entonces Stable indica si la pantalla
-// estaba quieta en ese momento.
+// estaba quieta en ese momento. Changed informa si hubo cambio respecto a
+// before, pero ya no adelanta la salida.
 func (s *Settler) Wait(ctx context.Context, before *image.RGBA) (Settled, error) {
 	start := time.Now()
 	minWait, maxWait, poll := ms(s.cfg.MinWaitMS), ms(s.cfg.MaxWaitMS), ms(s.cfg.PollMS)
@@ -78,7 +82,7 @@ func (s *Settler) Wait(ctx context.Context, before *image.RGBA) (Settled, error)
 	}
 	deadline := start.Add(maxWait)
 	horizon := start.Add(ms(s.cfg.ChangeHorizonMS))
-	expectChange := before != nil && s.cfg.ChangeHorizonMS > 0
+	afterAction := before != nil && s.cfg.ChangeHorizonMS > 0
 
 	prev, err := s.d.Capture(ctx)
 	if err != nil {
@@ -90,7 +94,7 @@ func (s *Settler) Wait(ctx context.Context, before *image.RGBA) (Settled, error)
 	for {
 		now := time.Now()
 		quiet := run >= need
-		if now.Sub(start) >= minWait && quiet && (!expectChange || res.Changed || !now.Before(horizon)) {
+		if now.Sub(start) >= minWait && quiet && (!afterAction || !now.Before(horizon)) {
 			res.Stable = true
 			break
 		}
