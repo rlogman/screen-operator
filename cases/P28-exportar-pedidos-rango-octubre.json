@@ -1,0 +1,27 @@
+{
+  "id": "P28",
+  "nivel": "regular",
+  "categoria": "exportar",
+  "trampas": [
+    "exporte_con_filtros"
+  ],
+  "instruccion": "Exporta los pedidos entregados entre el 1 y el 13 de octubre de 2026.",
+  "estado_esperado": "terminada",
+  "diff_esperado": [
+    {
+      "entidad": "pedidos",
+      "id": "*",
+      "campo": "*",
+      "accion": "export",
+      "valor": {
+        "lista": "pedidos",
+        "filtros": {
+          "estado": "Entregado",
+          "desde": "2026-10-01",
+          "hasta": "2026-10-13"
+        }
+      }
+    }
+  ],
+  "lista_blanca": []
+}

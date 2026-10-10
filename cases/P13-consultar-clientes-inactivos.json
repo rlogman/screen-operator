@@ -1,0 +1,13 @@
+{
+  "id": "P13",
+  "nivel": "dificil",
+  "categoria": "consultar",
+  "trampas": [
+    "conteo_multipagina"
+  ],
+  "instruccion": "¿Cuántos clientes inactivos hay?",
+  "estado_esperado": "terminada",
+  "respuesta_esperada": "8",
+  "diff_esperado": [],
+  "lista_blanca": []
+}

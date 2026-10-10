@@ -1,0 +1,20 @@
+{
+  "id": "P07",
+  "nivel": "dificil",
+  "categoria": "editar",
+  "trampas": [
+    "homonimo_resoluble_por_ciudad"
+  ],
+  "instruccion": "Cambia el teléfono de Abarrotes Moreno de Cali a 3127778899.",
+  "estado_esperado": "terminada",
+  "diff_esperado": [
+    {
+      "entidad": "clientes",
+      "id": "CL-0136",
+      "campo": "telefono",
+      "accion": "update",
+      "valor": "3127778899"
+    }
+  ],
+  "lista_blanca": []
+}

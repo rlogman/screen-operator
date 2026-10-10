@@ -1,0 +1,11 @@
+{
+  "id": "P20",
+  "nivel": "facil",
+  "categoria": "consultar",
+  "trampas": [],
+  "instruccion": "¿Cuál es el valor de la factura FV-10165?",
+  "estado_esperado": "terminada",
+  "respuesta_esperada": "100000",
+  "diff_esperado": [],
+  "lista_blanca": []
+}

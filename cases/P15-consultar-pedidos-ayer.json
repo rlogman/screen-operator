@@ -1,0 +1,13 @@
+{
+  "id": "P15",
+  "nivel": "regular",
+  "categoria": "consultar",
+  "trampas": [
+    "fecha_relativa"
+  ],
+  "instruccion": "¿Cuántos pedidos se registraron ayer?",
+  "estado_esperado": "terminada",
+  "respuesta_esperada": "2",
+  "diff_esperado": [],
+  "lista_blanca": []
+}

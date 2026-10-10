@@ -1,0 +1,25 @@
+{
+  "id": "P26",
+  "nivel": "facil",
+  "categoria": "exportar",
+  "trampas": [
+    "exporte_con_filtros"
+  ],
+  "instruccion": "Exporta el reporte de facturas pagadas.",
+  "estado_esperado": "terminada",
+  "diff_esperado": [
+    {
+      "entidad": "facturas",
+      "id": "*",
+      "campo": "*",
+      "accion": "export",
+      "valor": {
+        "lista": "facturas",
+        "filtros": {
+          "estado": "Pagada"
+        }
+      }
+    }
+  ],
+  "lista_blanca": []
+}

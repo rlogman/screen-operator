@@ -1,0 +1,20 @@
+{
+  "id": "P11",
+  "nivel": "regular",
+  "categoria": "editar",
+  "trampas": [
+    "nombre_casi_igual"
+  ],
+  "instruccion": "Corrige el correo de Ferretería Ruiz: es cartera@ferreteriaruiz.co.",
+  "estado_esperado": "terminada",
+  "diff_esperado": [
+    {
+      "entidad": "clientes",
+      "id": "CL-0012",
+      "campo": "correo",
+      "accion": "update",
+      "valor": "cartera@ferreteriaruiz.co"
+    }
+  ],
+  "lista_blanca": []
+}

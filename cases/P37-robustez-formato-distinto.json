@@ -1,0 +1,41 @@
+{
+  "id": "P37",
+  "nivel": "regular",
+  "categoria": "robustez",
+  "trampas": [
+    "formato_distinto"
+  ],
+  "instruccion": "Registra al cliente Tienda La Ceiba, NIT 901.888.444, teléfono 315 999 0000, ciudad Bucaramanga.",
+  "estado_esperado": "terminada",
+  "diff_esperado": [
+    {
+      "entidad": "clientes",
+      "id": "nuevo",
+      "campo": "nombre",
+      "accion": "create",
+      "valor": "Tienda La Ceiba"
+    },
+    {
+      "entidad": "clientes",
+      "id": "nuevo",
+      "campo": "nit",
+      "accion": "create",
+      "valor": "901888444"
+    },
+    {
+      "entidad": "clientes",
+      "id": "nuevo",
+      "campo": "telefono",
+      "accion": "create",
+      "valor": "3159990000"
+    },
+    {
+      "entidad": "clientes",
+      "id": "nuevo",
+      "campo": "ciudad",
+      "accion": "create",
+      "valor": "Bucaramanga"
+    }
+  ],
+  "lista_blanca": []
+}

@@ -1,0 +1,13 @@
+{
+  "id": "P14",
+  "nivel": "regular",
+  "categoria": "consultar",
+  "trampas": [
+    "conteo_multipagina"
+  ],
+  "instruccion": "¿Cuántos pedidos hay en estado Borrador?",
+  "estado_esperado": "terminada",
+  "respuesta_esperada": "40",
+  "diff_esperado": [],
+  "lista_blanca": []
+}

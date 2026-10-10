@@ -1,0 +1,14 @@
+{
+  "id": "P17",
+  "nivel": "regular",
+  "categoria": "consultar",
+  "trampas": [
+    "pregunta_dos_datos",
+    "nombre_casi_igual"
+  ],
+  "instruccion": "¿Cuál es el NIT y la ciudad de Droguería Pardo?",
+  "estado_esperado": "terminada",
+  "respuesta_esperada": "827052252; Cali",
+  "diff_esperado": [],
+  "lista_blanca": []
+}

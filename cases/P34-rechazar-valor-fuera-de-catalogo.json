@@ -1,0 +1,15 @@
+{
+  "id": "P34",
+  "nivel": "regular",
+  "categoria": "rechazar",
+  "trampas": [
+    "valor_fuera_de_catalogo"
+  ],
+  "instruccion": "Cambia la ciudad de Papelería Pardo a Manizales.",
+  "estado_esperado": "fallida",
+  "claves_razon": [
+    "Manizales"
+  ],
+  "diff_esperado": [],
+  "lista_blanca": []
+}

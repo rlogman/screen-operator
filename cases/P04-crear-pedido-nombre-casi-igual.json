@@ -1,0 +1,42 @@
+{
+  "id": "P04",
+  "nivel": "dificil",
+  "categoria": "crear",
+  "trampas": [
+    "nombre_casi_igual",
+    "fecha_relativa"
+  ],
+  "instruccion": "Registra un pedido confirmado de Ferretería Ruiz e Hijos con fecha de ayer y total 780.000.",
+  "estado_esperado": "terminada",
+  "diff_esperado": [
+    {
+      "entidad": "pedidos",
+      "id": "nuevo",
+      "campo": "cliente",
+      "accion": "create",
+      "valor": "CL-0013"
+    },
+    {
+      "entidad": "pedidos",
+      "id": "nuevo",
+      "campo": "fecha",
+      "accion": "create",
+      "valor": "2026-10-13"
+    },
+    {
+      "entidad": "pedidos",
+      "id": "nuevo",
+      "campo": "estado",
+      "accion": "create",
+      "valor": "Confirmado"
+    },
+    {
+      "entidad": "pedidos",
+      "id": "nuevo",
+      "campo": "total",
+      "accion": "create",
+      "valor": 780000
+    }
+  ],
+  "lista_blanca": []
+}
