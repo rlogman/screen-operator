@@ -126,6 +126,8 @@ type Report struct {
 	Metas          []GoalResult     `json:"metas"`
 	TodasCumplen   bool             `json:"todas_cumplen"`
 	SinCheckEstado []string         `json:"casos_sin_check_de_estado"`
+	// Avisos: registros con avisos de puntuacion que no cambian el resultado.
+	Avisos []string `json:"avisos,omitempty"`
 	// Rechazados: archivos de caso que ParseCase rechazo y no se corrieron.
 	Rechazados []Rejected `json:"casos_rechazados,omitempty"`
 	Goals      Goals      `json:"configuracion_metas"`
@@ -227,6 +229,11 @@ func BuildReport(recs []Record, g Goals, sources []string) Report {
 		}
 		if r.SinCheckEstado {
 			rep.SinCheckEstado = append(rep.SinCheckEstado, fmt.Sprintf("%s (corrida %d)", r.ID, r.Corrida))
+		}
+		if r.Puntaje != nil {
+			for _, a := range r.Puntaje.Avisos {
+				rep.Avisos = append(rep.Avisos, fmt.Sprintf("%s (corrida %d): %s", r.ID, r.Corrida, a))
+			}
 		}
 	}
 	for k, v := range groups {
@@ -365,6 +372,12 @@ func (r Report) Markdown() string {
 		b.WriteString("\n## Casos sin check de estado\n\n/__check no aceptó estos casos; se puntuaron solo con las reglas locales.\n\n")
 		for _, c := range r.SinCheckEstado {
 			b.WriteString("- " + c + "\n")
+		}
+	}
+	if len(r.Avisos) > 0 {
+		b.WriteString("\n## Avisos\n\nNo cambian el resultado de la tarea.\n\n")
+		for _, a := range r.Avisos {
+			b.WriteString("- " + a + "\n")
 		}
 	}
 	return b.String()

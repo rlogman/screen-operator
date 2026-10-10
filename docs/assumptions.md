@@ -58,9 +58,11 @@ aplicada en `internal/harness/score.go` (`AnswerLine`, `AnswerMatches`, `Malform
 
 - **Formato estricto.** Cuenta como línea de respuesta solo la que empieza con `respuesta:` en
   minúsculas, sin espacio antes de los dos puntos; se admiten espacios a la izquierda. `Respuesta:`,
-  `RESPUESTA:` o `respuesta :` no cuentan y la puntuación las marca con el motivo "línea de
-  respuesta con formato inválido" (la tarea queda incorrecta). Si el evaluador fuera más tolerante,
-  el harness solo es más exigente que él, nunca más permisivo.
+  `RESPUESTA:` o `respuesta :` no cuentan como respuesta y la puntuación las reporta como **aviso**
+  ("línea de respuesta con formato inválido", visible en `report.md` y `report.json`), no como motivo
+  de incorrecta. Una pregunta falla por formato solo si no hay ninguna línea `respuesta:` válida
+  (motivo "falta la línea 'respuesta:'"); una tarea de mutación con una línea `Respuesta: listo` no
+  se penaliza.
 - **Varias líneas `respuesta:`: cuenta la primera.** El README habla de "esa línea" en singular.
   Tomar la primera hace que una respuesta tentativa escrita antes de una corrección cuente en
   contra, que es el caso peligroso. El agente debe escribir una sola línea `respuesta:`.

@@ -161,10 +161,10 @@ func TestE5_2_S1_SemicolonAfterSingleAnswer(t *testing.T) {
 }
 
 // Solo "respuesta:" en minusculas (con espacios a la izquierda) es la linea de
-// respuesta; "Respuesta:" o "respuesta :" se marcan como formato invalido.
+// respuesta; "Respuesta:" o "respuesta :" no cuentan como respuesta y dan aviso.
 func TestE5_2_S1_StrictAnswerPrefix(t *testing.T) {
 	c := mustCase(t, e3Case)
-	if s := ScoreCase(ScoreInput{Case: c, Estado: "terminada", Resumen: "Busqué.\n   respuesta: 45", Check: okCheck()}); !s.Correcta {
+	if s := ScoreCase(ScoreInput{Case: c, Estado: "terminada", Resumen: "Busqué.\n   respuesta: 45", Check: okCheck()}); !s.Correcta || len(s.Avisos) != 0 {
 		t.Fatalf("espacios a la izquierda se admiten: %+v", s)
 	}
 	for _, r := range []string{"Respuesta: 45", "RESPUESTA: 45", "respuesta : 45", "Busqué.\nRespuesta:45"} {
@@ -172,14 +172,32 @@ func TestE5_2_S1_StrictAnswerPrefix(t *testing.T) {
 			t.Fatalf("%q no deberia contar como linea de respuesta", r)
 		}
 		s := ScoreCase(ScoreInput{Case: c, Estado: "terminada", Resumen: r, Check: okCheck()})
-		if s.Correcta || !hasMotivo(s, MotivoFormatoResp) || !hasMotivo(s, MotivoSinRespuesta) {
-			t.Fatalf("%q: se esperaba formato invalido: %+v", r, s)
+		if s.Correcta || !hasMotivo(s, MotivoSinRespuesta) || len(s.Avisos) != 1 {
+			t.Fatalf("%q: se esperaba falta de respuesta con aviso: %+v", r, s)
 		}
 	}
-	// En una pregunta sin respuesta posible tambien se marca.
+	// En una pregunta sin respuesta posible la linea mal formada no cuenta: correcta, con aviso.
 	q := mustCase(t, `{"id":"Q9","instruccion":"¿Cuál es el correo de X?","estado_esperado":"fallida","diff_esperado":[]}`)
-	if s := ScoreCase(ScoreInput{Case: q, Estado: "fallida", Resumen: "No hay correo.\nRespuesta: no disponible", Check: okCheck()}); s.Correcta || !hasMotivo(s, MotivoFormatoResp) {
-		t.Fatalf("se esperaba formato invalido: %+v", s)
+	if s := ScoreCase(ScoreInput{Case: q, Estado: "fallida", Resumen: "No hay correo.\nRespuesta: no disponible", Check: okCheck()}); !s.Correcta || len(s.Avisos) != 1 {
+		t.Fatalf("se esperaba correcta con aviso: %+v", s)
+	}
+}
+
+// Una linea "Respuesta:" en una tarea de mutacion es solo un aviso.
+func TestE5_2_S1_UppercaseIsWarningOnMutation(t *testing.T) {
+	c := mustCase(t, `{"id":"M1","instruccion":"Cambia la dirección de CL-0007.","estado_esperado":"terminada","diff_esperado":[{"entidad":"clientes","id":"CL-0007","campo":"direccion","accion":"update","valor":"Calle 1 # 1-01"}],"lista_blanca":[]}`)
+	s := ScoreCase(ScoreInput{Case: c, Estado: "terminada", Resumen: "Hecho.\nRespuesta: listo", Check: okCheck()})
+	if !s.Correcta || s.FalsoExito || len(s.Motivos) != 0 || len(s.Avisos) != 1 {
+		t.Fatalf("se esperaba correcta con aviso: %+v", s)
+	}
+}
+
+// Una linea valida mas otra "Respuesta:" no hace incorrecta la pregunta.
+func TestE5_2_S1_UppercaseIsWarningWithValidLine(t *testing.T) {
+	c := mustCase(t, e3Case)
+	s := ScoreCase(ScoreInput{Case: c, Estado: "terminada", Resumen: "respuesta: 45\nRespuesta: 45", Check: okCheck()})
+	if !s.Correcta || s.FalsoExito || len(s.Avisos) != 1 {
+		t.Fatalf("se esperaba correcta con aviso: %+v", s)
 	}
 }
 
