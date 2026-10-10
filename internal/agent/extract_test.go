@@ -33,6 +33,39 @@ func pageJSONInd(first, n int, next bool, ind string) string {
 	return string(b)
 }
 
+// Tras un commit, un "fallida" pedido sin intentar verificar se rechaza una
+// vez (en vivo E1 se creo el cliente y el agente cerro fallida sin releer).
+// Un segundo "fallida" si se acepta: el agente puede fallar honestamente.
+func TestE6_3_S4_FailedWithoutVerifyIsNudgedOnce(t *testing.T) {
+	chat := fakes.NewScriptedLLM(
+		jsonClassifyEdit, jsonOrient,
+		`{"fase":"actuar","action":"commit","x":600,"y":700,"what":"Guardar cliente CL-0007","target":"CL-0007"}`,
+		`{"fase":"verificar","action":"finish","estado":"terminada","razon":"guardado","verificado":true}`,
+		`{"fase":"verificar","action":"finish","estado":"fallida","razon":"no se pudo verificar el guardado"}`,
+		`{"fase":"verificar","action":"double_click","x":200,"y":300,"reason":"reabrir la ficha"}`,
+		`{"action":"finish","estado":"terminada","razon":"guardado","entidad":"cliente","id_registro":"CL-0007","cambios":["direccion = Calle 80 # 24-15"],"verificado":true,"evidencia":"se lee Calle 80 # 24-15"}`,
+	)
+	a, _ := newTestAgent(t, chat, gray(), 20)
+	out := a.Run(context.Background(), "Corrige la dirección de Distribuciones El Faro: ahora es Calle 80 # 24-15.")
+	h := strings.Join(out.State.History, "\n")
+	if !out.Done || !strings.Contains(h, "no aceptado: todavia no verificaste") {
+		t.Fatalf("no se pidio verificar antes de aceptar fallida: %q\n%s", out.Summary, h)
+	}
+
+	chat = fakes.NewScriptedLLM(
+		jsonClassifyEdit, jsonOrient,
+		`{"fase":"actuar","action":"commit","x":600,"y":700,"what":"Guardar cliente CL-0007","target":"CL-0007"}`,
+		`{"fase":"verificar","action":"finish","estado":"terminada","razon":"guardado","verificado":true}`,
+		`{"fase":"verificar","action":"finish","estado":"fallida","razon":"no se pudo verificar"}`,
+		`{"fase":"verificar","action":"finish","estado":"fallida","razon":"el valor leido no coincide"}`,
+	)
+	a, _ = newTestAgent(t, chat, gray(), 20)
+	out = a.Run(context.Background(), "Corrige la dirección de Distribuciones El Faro: ahora es Calle 80 # 24-15.")
+	if out.Done || len(chat.Calls()) != 6 {
+		t.Fatalf("el segundo fallida debia aceptarse: done=%v llamadas=%d", out.Done, len(chat.Calls()))
+	}
+}
+
 func mustPage(t *testing.T, s string) Page {
 	t.Helper()
 	p, err := ParsePage(s)

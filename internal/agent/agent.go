@@ -147,6 +147,7 @@ type Agent struct {
 	stable       bool     // la vista actual salio de una captura estable
 	lastNoEffect string   // ultima accion que no cambio la pantalla
 	recent       []string // ultimas acciones de pantalla
+	verifyNudged bool // ya se rechazo una vez un "fallida" sin intentar verificar
 	// nextXY: centro de "siguiente" en pantalla segun la ultima extraccion.
 	nextX, nextY int
 	hasNextXY    bool
@@ -741,6 +742,13 @@ func (a *Agent) doScreenAction(ctx context.Context, act Action) error {
 func (a *Agent) doFinish(ctx context.Context, act Action, phaseBefore Phase, rejects *int) (Outcome, bool, string) {
 	st := a.st
 	f := act.Finish
+	if f.Status == StatusFailed && writes(st.Class.Intent) && len(st.Commits) > 0 && st.Phase == PhaseVerify &&
+		st.Steps-st.VerifyFrom <= 1 && !a.verifyNudged {
+		// Tras un commit, "fallida" sin haber intentado verificar puede negar un
+		// cambio que si quedo: una sola vez se pide verificar antes de decidir.
+		a.verifyNudged = true
+		return Outcome{}, false, a.rejectFinish(rejects, act, "todavia no verificaste: busca o reabre el registro y lee el valor guardado; recien entonces decide terminada (verificado) o fallida")
+	}
 	if f.Status == StatusFailed {
 		a.record(fmt.Sprintf("%d. [%s] %s — el modelo pide cerrar como fallida: %s", st.Steps, st.Phase, act, f.Reason))
 		d := a.Guard.BeforeFinish(st, f)
