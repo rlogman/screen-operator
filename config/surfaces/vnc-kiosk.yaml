@@ -31,3 +31,10 @@ surface:
     poll_ms: 150
     stable_frames: 2
     diff_threshold: 0.002
+    # Tras una accion no se declara estable antes de este horizonte, aunque ya haya
+    # habido un cambio (el feedback inmediato, p. ej. un resaltado, no es el
+    # repintado). El README dice "hasta 1 s", pero medido contra el escritorio real
+    # (Cartera > Facturas, 21 muestras) el repintado llego hasta 1,93 s despues del
+    # up del clic. 2200 ms cubre eso con margen y cabe en max_wait_ms (2200 + 2
+    # comparaciones quietas de 150 ms < 2500).
+    change_horizon_ms: 2200

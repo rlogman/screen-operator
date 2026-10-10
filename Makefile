@@ -1,7 +1,7 @@
 # Gates locales de screen-operator. Los usan todos los loops (ver docs/requirements.json).
 GO ?= go
 
-.PHONY: build gate fmt-check vet test test-epic clean
+.PHONY: build gate fmt-check vet test test-epic test-desktop clean
 
 build:
 	mkdir -p bin
@@ -25,6 +25,19 @@ test:
 test-epic:
 	@if [ -z "$(E)" ]; then echo "uso: make test-epic E=<n>"; exit 2; fi
 	$(GO) test ./... -run '^TestE$(E)_' -count=1
+
+# test-desktop: escenarios contra el escritorio real (build tag desktop). Es la
+# UNICA forma soportada de correrlos: -p 1 serializa los paquetes, porque todos
+# comparten el mismo escritorio y en paralelo se pisan. Carga el entorno desde
+# ENV_FILE (por defecto .env) si existe, sin imprimir sus valores.
+# Uso: make test-desktop [ENV_FILE=ruta] [DESKTOP_RUN=regex] [DESKTOP_ARGS=-count=10]
+ENV_FILE ?= .env
+DESKTOP_RUN ?= ^TestE2_(2_S5|6_S5|7_S[124])_
+DESKTOP_ARGS ?= -count=1
+test-desktop:
+	@if [ -f "$(ENV_FILE)" ]; then set -a; . "$(ENV_FILE)"; set +a; echo "entorno cargado desde $(ENV_FILE)"; fi; \
+	echo "$(GO) test -tags desktop -p 1 ./... -run '$(DESKTOP_RUN)' $(DESKTOP_ARGS)"; \
+	$(GO) test -tags desktop -p 1 ./... -run '$(DESKTOP_RUN)' $(DESKTOP_ARGS)
 
 clean:
 	rm -rf bin

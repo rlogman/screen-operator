@@ -579,6 +579,11 @@
               "type": "number",
               "minimum": 0,
               "maximum": 1
+            },
+            "change_horizon_ms": {
+              "description": "Tras una accion, cuanto se espera a que aparezca un cambio antes de aceptar la pantalla quieta como resultado. Cubre el repintado retrasado. 0 = no esperar cambio.",
+              "type": "integer",
+              "minimum": 0
             }
           }
         }
