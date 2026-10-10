@@ -96,8 +96,8 @@ func TestE5_1_S2_TimeoutStopsPollingAndMovesOn(t *testing.T) {
 	w.finishAt = -1 // nunca termina
 	var out bytes.Buffer
 	r := w.runner(&out)
-	c1 := mustCase(t, `{"id":"A","instruccion":"x","estado_esperado":"terminada"}`)
-	c2 := mustCase(t, `{"id":"B","instruccion":"y","estado_esperado":"terminada"}`)
+	c1 := mustCase(t, `{"id":"A","instruccion":"x","estado_esperado":"terminada","diff_esperado":[]}`)
+	c2 := mustCase(t, `{"id":"B","instruccion":"y","estado_esperado":"terminada","diff_esperado":[]}`)
 	recs, err := r.Run(context.Background(), []Case{c1, c2})
 	if err != nil {
 		t.Fatal(err)
@@ -181,7 +181,7 @@ func TestE5_1_S3_RunsOptionRepeatsWithReset(t *testing.T) {
 func TestE5_1_S4_CasesGlobListAlphabetical(t *testing.T) {
 	root := t.TempDir()
 	body := func(id string) string {
-		return `{"id":"` + id + `","instruccion":"x","estado_esperado":"terminada"}`
+		return `{"id":"` + id + `","instruccion":"x","estado_esperado":"terminada","diff_esperado":[]}`
 	}
 	writeCase(t, root, "material/pruebas/E1-crear.json", body("E1"))
 	writeCase(t, root, "material/pruebas/E10-otro.json", body("E10"))
@@ -196,9 +196,9 @@ func TestE5_1_S4_CasesGlobListAlphabetical(t *testing.T) {
 	}
 	defer os.Chdir(wd)
 
-	cases, warn, err := LoadCases("material/pruebas/E1*.json,cases/*.json")
-	if err != nil || len(warn) != 0 {
-		t.Fatalf("LoadCases: %v %v", err, warn)
+	cases, rej, warn, err := LoadCases("material/pruebas/E1*.json,cases/*.json")
+	if err != nil || len(warn) != 0 || len(rej) != 0 {
+		t.Fatalf("LoadCases: %v %v %v", err, warn, rej)
 	}
 	var got []string
 	for _, c := range cases {
@@ -225,11 +225,82 @@ func TestE5_1_S4_CasesGlobListAlphabetical(t *testing.T) {
 	}
 
 	// Un patron sin coincidencias avisa; ningun caso en total es error.
-	_, warn, err = LoadCases("cases/*.json,nada/*.json")
+	_, _, warn, err = LoadCases("cases/*.json,nada/*.json")
 	if err != nil || len(warn) != 1 {
 		t.Fatalf("patron vacio: %v %v", err, warn)
 	}
-	if _, _, err := LoadCases("nada/*.json"); err == nil {
+	if _, _, _, err := LoadCases("nada/*.json"); err == nil {
 		t.Fatal("sin casos deberia ser error")
+	}
+}
+
+// Un caso al que le falta diff_esperado, estado_esperado o instruccion se
+// rechaza: /__check con un diff ausente da pass=true y el caso contaria como
+// acierto sin verificar nada. El runner reporta el archivo y no lo corre.
+func TestE5_1_S4_RejectsMalformedCase(t *testing.T) {
+	bad := map[string]string{
+		"sin-diff":           `{"id":"X","instruccion":"x","estado_esperado":"terminada"}`,
+		"diff-objeto":        `{"id":"X","instruccion":"x","estado_esperado":"terminada","diff_esperado":{}}`,
+		"diff-null":          `{"id":"X","instruccion":"x","estado_esperado":"terminada","diff_esperado":null}`,
+		"sin-estado":         `{"id":"X","instruccion":"x","diff_esperado":[]}`,
+		"estado-raro":        `{"id":"X","instruccion":"x","estado_esperado":"ok","diff_esperado":[]}`,
+		"sin-instruccion":    `{"id":"X","estado_esperado":"terminada","diff_esperado":[]}`,
+		"instruccion-vacia":  `{"id":"X","instruccion":"  ","estado_esperado":"terminada","diff_esperado":[]}`,
+		"instruccion-numero": `{"id":"X","instruccion":3,"estado_esperado":"terminada","diff_esperado":[]}`,
+	}
+	for name, b := range bad {
+		if _, err := ParseCase(name+".json", []byte(b)); err == nil {
+			t.Errorf("%s: se esperaba rechazo", name)
+		}
+	}
+	if _, err := ParseCase("ok.json", []byte(`{"id":"X","instruccion":"x","estado_esperado":"fallida","diff_esperado":[]}`)); err != nil {
+		t.Fatalf("diff_esperado [] es valido: %v", err)
+	}
+	// Los casos oficiales siguen siendo validos.
+	officials, _ := filepath.Glob(filepath.Join("..", "..", "material", "pruebas", "*.json"))
+	if len(officials) == 0 {
+		t.Fatal("no se encontraron los casos oficiales")
+	}
+	for _, f := range officials {
+		officialCase(t, filepath.Base(f))
+	}
+
+	root := t.TempDir()
+	writeCase(t, root, "cases/a-ok.json", `{"id":"a","instruccion":"x","estado_esperado":"terminada","diff_esperado":[]}`)
+	writeCase(t, root, "cases/b-sin-diff.json", bad["sin-diff"])
+	writeCase(t, root, "cases/c-ok.json", `{"id":"c","instruccion":"x","estado_esperado":"terminada","diff_esperado":[]}`)
+	wd, _ := os.Getwd()
+	if err := os.Chdir(root); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(wd)
+	cases, rej, _, err := LoadCases("cases/*.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rej) != 1 || rej[0].Path != filepath.Join("cases", "b-sin-diff.json") || !strings.Contains(rej[0].Motivo, "diff_esperado") {
+		t.Fatalf("rechazados = %+v", rej)
+	}
+	w := newWorld(t)
+	recs, err := w.runner(nil).Run(context.Background(), cases)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ids []string
+	for _, rc := range recs {
+		ids = append(ids, rc.ID)
+	}
+	if strings.Join(ids, ",") != "a,c" {
+		t.Fatalf("se corrieron %v; el rechazado no debe correr", ids)
+	}
+	// El reporte lista el rechazado.
+	rep := BuildReport(recs, Goals{}, nil)
+	rep.Rechazados = rej
+	if md := rep.Markdown(); !strings.Contains(md, "cases/b-sin-diff.json") || !strings.Contains(md, "Casos rechazados") {
+		t.Fatalf("report.md sin el rechazado:\n%s", md)
+	}
+	// Si todos se rechazan no hay corrida, pero el rechazo se informa.
+	if _, rej, _, err := LoadCases("cases/b-*.json"); err == nil || len(rej) != 1 {
+		t.Fatalf("solo rechazados: err=%v rej=%v", err, rej)
 	}
 }

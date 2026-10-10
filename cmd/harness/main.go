@@ -119,9 +119,12 @@ func cmdRun(ctx context.Context, args []string, getenv func(string) string, now 
 		fmt.Fprintln(stderr, "harness: SO_DESKTOP_URL:", err)
 		return 2
 	}
-	cs, warns, err := harness.LoadCases(*cases)
+	cs, rejected, warns, err := harness.LoadCases(*cases)
 	for _, w := range warns {
 		fmt.Fprintln(stderr, "harness: aviso:", w)
+	}
+	for _, x := range rejected {
+		fmt.Fprintf(stderr, "harness: caso rechazado, no se corre: %s: %s\n", x.Path, x.Motivo)
 	}
 	if err != nil {
 		fmt.Fprintln(stderr, "harness:", err)
@@ -157,12 +160,14 @@ func cmdRun(ctx context.Context, args []string, getenv func(string) string, now 
 	}
 	fmt.Fprintf(stdout, "harness: %d resultados en %s\n", len(recs), filepath.Join(dir, "results.jsonl"))
 	rep := harness.BuildReport(recs, goals, []string{filepath.Join(dir, "results.jsonl")})
+	rep.Rechazados = rejected
 	if err := harness.WriteReport(dir, rep); err != nil {
 		fmt.Fprintln(stderr, "harness:", err)
 		return 1
 	}
 	printGoals(stdout, dir, rep)
-	if *gate && !rep.TodasCumplen {
+	// Un corpus con casos rechazados no pasa el gate aunque las metas cumplan.
+	if *gate && (!rep.TodasCumplen || len(rejected) > 0) {
 		return 1
 	}
 	return 0

@@ -40,7 +40,13 @@ func (c Case) IsQuestion() bool {
 	return strings.ContainsAny(c.Instruccion, "?¿")
 }
 
-// ParseCase interpreta el JSON de una prueba.
+// ParseCase interpreta el JSON de una prueba y lo rechaza si le falta algo
+// que la puntuacion necesita:
+//   - "instruccion" no vacia;
+//   - "estado_esperado" igual a "terminada" o "fallida";
+//   - "diff_esperado" presente y arreglo (puede ser []). /__check trata un diff
+//     ausente como vacio y devuelve pass=true, asi que un caso sin el campo
+//     contaria como acierto sin verificar nada (docs/assumptions.md).
 func ParseCase(path string, raw []byte) (Case, error) {
 	var c Case
 	dec := json.NewDecoder(bytes.NewReader(raw))
@@ -68,20 +74,37 @@ func ParseCase(path string, raw []byte) (Case, error) {
 	if strings.TrimSpace(c.ID) == "" {
 		return Case{}, fmt.Errorf("%s: falta 'id'", path)
 	}
-	if strings.TrimSpace(c.Instruccion) == "" {
+	if _, ok := extra["instruccion"].(string); !ok || strings.TrimSpace(c.Instruccion) == "" {
 		return Case{}, fmt.Errorf("%s: falta 'instruccion'", path)
+	}
+	if _, ok := extra["estado_esperado"]; !ok {
+		return Case{}, fmt.Errorf("%s: falta 'estado_esperado'", path)
 	}
 	if c.EstadoEsperado != "terminada" && c.EstadoEsperado != "fallida" {
 		return Case{}, fmt.Errorf("%s: estado_esperado debe ser 'terminada' o 'fallida'", path)
 	}
+	d, ok := extra["diff_esperado"]
+	if !ok {
+		return Case{}, fmt.Errorf("%s: falta 'diff_esperado' (usar [] si la tarea no cambia nada)", path)
+	}
+	if _, ok := d.([]any); !ok {
+		return Case{}, fmt.Errorf("%s: 'diff_esperado' debe ser un arreglo", path)
+	}
 	return c, nil
+}
+
+// Rejected es un archivo de caso que ParseCase rechazo: no se corre.
+type Rejected struct {
+	Path   string `json:"archivo"`
+	Motivo string `json:"motivo"`
 }
 
 // LoadCases expande una lista de patrones glob separados por comas, quita
 // duplicados y devuelve los casos en orden alfabetico de ruta. Un patron sin
-// coincidencias va en warnings (el llamador lo muestra); ningun caso en total
-// es error: un typo no debe correr un corpus vacio en silencio.
-func LoadCases(patterns string) (cases []Case, warnings []string, err error) {
+// coincidencias va en warnings (el llamador lo muestra). Un archivo que
+// ParseCase rechaza va en rejected y no se corre; los demas si. Ningun caso
+// valido en total es error: un typo no debe correr un corpus vacio en silencio.
+func LoadCases(patterns string) (cases []Case, rejected []Rejected, warnings []string, err error) {
 	seen := map[string]bool{}
 	var paths []string
 	for _, p := range strings.Split(patterns, ",") {
@@ -91,7 +114,7 @@ func LoadCases(patterns string) (cases []Case, warnings []string, err error) {
 		}
 		m, err := filepath.Glob(p)
 		if err != nil {
-			return nil, nil, fmt.Errorf("patron %q: %w", p, err)
+			return nil, nil, nil, fmt.Errorf("patron %q: %w", p, err)
 		}
 		if len(m) == 0 {
 			warnings = append(warnings, fmt.Sprintf("el patron %q no coincide con ningun archivo", p))
@@ -106,20 +129,24 @@ func LoadCases(patterns string) (cases []Case, warnings []string, err error) {
 		}
 	}
 	if len(paths) == 0 {
-		return nil, warnings, errors.New("no hay casos que correr")
+		return nil, nil, warnings, errors.New("no hay casos que correr")
 	}
 	sort.Strings(paths)
 	cases = make([]Case, 0, len(paths))
 	for _, f := range paths {
 		raw, err := os.ReadFile(f)
 		if err != nil {
-			return nil, warnings, err
+			return nil, nil, warnings, err
 		}
 		c, err := ParseCase(f, raw)
 		if err != nil {
-			return nil, warnings, err
+			rejected = append(rejected, Rejected{Path: f, Motivo: strings.TrimPrefix(err.Error(), f+": ")})
+			continue
 		}
 		cases = append(cases, c)
 	}
-	return cases, warnings, nil
+	if len(cases) == 0 {
+		return nil, rejected, warnings, errors.New("no hay casos validos que correr")
+	}
+	return cases, rejected, warnings, nil
 }

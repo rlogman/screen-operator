@@ -126,7 +126,9 @@ type Report struct {
 	Metas          []GoalResult     `json:"metas"`
 	TodasCumplen   bool             `json:"todas_cumplen"`
 	SinCheckEstado []string         `json:"casos_sin_check_de_estado"`
-	Goals          Goals            `json:"configuracion_metas"`
+	// Rechazados: archivos de caso que ParseCase rechazo y no se corrieron.
+	Rechazados []Rejected `json:"casos_rechazados,omitempty"`
+	Goals      Goals      `json:"configuracion_metas"`
 }
 
 // isOfficial dice si el registro viene de un caso oficial.
@@ -330,6 +332,13 @@ func (r Report) Markdown() string {
 	var b strings.Builder
 	b.WriteString("# Reporte del harness\n\n")
 	b.WriteString("Fuentes: " + strings.Join(r.Fuentes, ", ") + "\n\n")
+	if len(r.Rechazados) > 0 {
+		b.WriteString("## Casos rechazados (no se corrieron)\n\n")
+		for _, x := range r.Rechazados {
+			fmt.Fprintf(&b, "- `%s`: %s\n", x.Path, x.Motivo)
+		}
+		b.WriteString("\n")
+	}
 	b.WriteString("## Metas\n\n| Meta | Valor | Resultado | Detalle |\n|---|---|---|---|\n")
 	for _, m := range r.Metas {
 		fmt.Fprintf(&b, "| %s | %s | %s | %s |\n", m.Meta, m.Valor, cumple(m.Cumple), m.Detalle)
