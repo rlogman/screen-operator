@@ -89,11 +89,16 @@ policy:
     require_unique_target: true
   unknown_values: fail
   stop_on_report: true
-  # Dialogos que bloquean la app al abrirla (incidente FR-0153). Un dialogo es
-  # informativo solo si el modelo lo lee asi Y ningun boton ni el titulo tiene
-  # una palabra de efecto. Informativo: se cierra con un boton de close_labels
-  # (o el unico boton, si no tiene efecto). Con efecto: solo se cancela con
-  # cancel_labels; si no hay, la tarea termina fallida nombrando el dialogo.
+  # Dialogos que bloquean la app al abrirla (incidente FR-0153). El modelo solo
+  # sube el riesgo, nunca lo baja: un dialogo es con efecto si el modelo no lo
+  # lee informativo, si el titulo o un boton tienen una palabra de efecto, si
+  # el titulo o el texto tienen un verbo de policy.destructive.keywords, si
+  # ofrece Cancelar/No/Volver junto a otro boton, o si un boton repite el verbo
+  # del dialogo ("¿Cerrar sesión?" [Cerrar]). Informativo: se cierra con un
+  # boton de close_labels (o el unico boton, si no tiene efecto). Con efecto:
+  # solo se cancela con cancel_labels (primero Cancelar/No/Volver, luego
+  # Cerrar, luego la x), nunca con un boton que repite el verbo del dialogo;
+  # si no hay, la tarea termina fallida nombrando el dialogo sin tocar nada.
   dialogs:
     enabled: true
     max_on_open: 3

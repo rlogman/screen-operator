@@ -36,11 +36,16 @@ inicial, el modelo devuelve el título de la app, la **versión visible** y, si 
 que bloquea la pantalla (título, tipo y botones con coordenadas). Dos cosas salen de ahí:
 
 1. **Diálogos (10.1).** El código, no el modelo, decide qué hacer con `policy.dialogs`
-   (`config/base.yaml`): un diálogo es informativo solo si el modelo lo lee así y ni el título ni
-   ningún botón tiene una palabra de efecto (eliminar, confirmar, pagar, aplicar, guardar,
-   cambios...). Uno informativo se cierra con un botón de cierre (Entendido, Aceptar, Cerrar...);
-   uno con efecto **nunca se confirma**: se cancela si hay Cancelar / Cerrar / No / x y, si no hay
-   opción segura, la tarea termina `fallida` nombrando el diálogo sin tocar el escritorio. Después
+   (`config/base.yaml`), y el modelo solo puede subir el riesgo, nunca bajarlo. Un diálogo es con
+   efecto si el modelo no lo lee informativo, si el título o un botón tienen una palabra de efecto
+   (eliminar, confirmar, pagar, aplicar, guardar, cambios...), si el título o el texto tienen un
+   verbo de `policy.destructive.keywords` ("Se eliminará el registro"), si ofrece Cancelar / No /
+   Volver junto a otro botón, o si un botón repite el verbo del diálogo ("¿Cerrar sesión?"
+   [Cerrar]). Uno informativo se cierra con un botón de cierre (Entendido, Aceptar, Cerrar...);
+   uno con efecto **nunca se confirma**: se cancela con Cancelar / No / Volver, si no Cerrar, si no
+   la x, y nunca con un botón que repite el verbo del diálogo (en "¿Cerrar caja?" [Cerrar,
+   Cancelar] se elige Cancelar). Si no hay opción segura, la tarea termina `fallida` nombrando el
+   diálogo sin tocar el escritorio. Después
    del clic, otra revisión confirma que la pantalla principal quedó libre. La traza registra
    `diálogo informativo cerrado: "Novedades de la versión 4.2" (boton "Entendido")`.
 2. **Huella de app (10.2).** Título y versión se comparan con el perfil (`app.match.screen_text_any`
@@ -105,8 +110,8 @@ sin pistas de perfil), una corrida por caso, horas locales del equipo (BOG-1).
 |---|---|---|---|---|---|---|---|
 | `runs/2026-10-10_153607` | 62be776 (antes de las iteraciones 2-3 de la épica 6) | 5 oficiales | 1/5 | 1 (E2: clic en Exportar en Clientes) | 265 s | US$ 0,032 | **dudosa**: se solapó con la medición de la épica 7 en el mismo escritorio |
 | `runs/2026-10-10_155638` | 5d279fd (merge de la épica 6 it. 2-3) | 5 oficiales | 3/5 (E3, E4, E5) | 0 | 265 s | US$ 0,026 | **dudosa**: el lock mostró otro dueño a las 16:05 mientras corría |
-| `runs/2026-10-10_161225` | 5d279fd | 6 del corpus (P01, P06, P13, P23, P29, P35) | 2/6 (P29, P35) | 0 | 265 s | US$ 0,024 | 16:12-16:30 |
-| `runs/2026-10-10_163011` | 8c4bfc8 (final: también cierra el modal si reaparece) | 5 oficiales | 2/5 (E4, E5) | 0 | 265 s | US$ 0,020 | 16:30-16:43 |
+| `runs/2026-10-10_161225` | 5d279fd | 6 del corpus (P01, P06, P13, P23, P29, P35) | 2/6 (P29, P35) | 0 | 265 s | US$ 0,024 | 16:12-16:30; **solape no verificado** (hay una corrida de la épica 7 con marca 16:12:24, `.claude/worktrees/agent-a4a2ee55b429748ba/runs/e7/2026-10-10_161224`, no versionada) |
+| `runs/2026-10-10_163011` | 8c4bfc8 (final: también cierra el modal si reaparece) | 5 oficiales | 2/5 (E4, E5) | 0 | 265 s | US$ 0,020 | 16:30-16:43; **solape no verificado** (el reporte de esa corrida de la épica 7 tiene hora 16:34; no se revisó el lock) |
 
 Reporte agregado de la medición final (oficiales con el código final + corpus):
 [`runs/2026-10-10_164316/report.md`](../runs/2026-10-10_164316/report.md) (no versionado; `runs/`
@@ -117,8 +122,13 @@ costo medio US$ 0,022.
 
 Lectura honesta:
 - Lo que el incidente rompió quedó resuelto: el modal se cierra en código en todas las tareas
-  (traza `diálogo informativo cerrado` en las 20 tareas que llegaron a orientar, de 21 medidas; P29 se rechazó antes de tocar la app) y
+  (traza `diálogo informativo cerrado` en 20 de las 21 tareas medidas; P29 se rechazó antes de tocar la app) y
   ya no consume pasos del modelo; el perfil viejo no puede inyectar etiquetas de v3.9.
+  Fuente del "20 de 21": los logs del agente de las cuatro corridas, **no versionados** (`runs/`
+  está en `.gitignore`) y que solo existen en el worktree de la medición:
+  `.claude/worktrees/agent-a38295261988781fc/runs/e10-{t1,c2,c3,c11}/agent.log` (153607, 155638,
+  161225 y 163011). Conteo reproducible: por log, tareas = líneas `"tarea recibida"` y tareas con
+  cierre = `task_id` distintos en líneas con `diálogo informativo cerrado` (5/5, 5/5, 5/6, 5/5).
 - Los falsos éxitos bajaron de 1 a 0 en las corridas con el código de la épica 6 it. 2-3.
 - El acierto no mejoró de forma clara (2/5 a 3/5 a 2/5 entre corridas): la causa dominante de
   los fallos es tiempo agotado (265 s) navegando menús y filtros con el modelo barato, no el tema.

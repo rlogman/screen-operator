@@ -50,6 +50,10 @@ type DialogPolicy struct {
 	CloseLabels  []string `json:"close_labels"`
 	CancelLabels []string `json:"cancel_labels"`
 	EffectWords  []string `json:"effect_words"`
+	// DestructiveVerbs son los verbos de policy.destructive.keywords (los
+	// cuantificadores como "todos" no cuentan): si aparecen en el titulo o el
+	// texto, el dialogo es con efecto aunque el modelo lo lea informativo.
+	DestructiveVerbs []string `json:"-"`
 }
 
 // DialogPolicyFromConfig lee policy.dialogs (ausente = deshabilitado).
@@ -66,6 +70,17 @@ func DialogPolicyFromConfig(c *config.Config) (DialogPolicy, error) {
 	}
 	if p.MaxOnOpen == 0 && p.Enabled {
 		p.MaxOnOpen = 3
+	}
+	if _, ok := c.Lookup("policy.destructive.keywords"); ok {
+		var kw []string
+		if err := c.Decode("policy.destructive.keywords", &kw); err != nil {
+			return DialogPolicy{}, err
+		}
+		for _, k := range kw {
+			if isVerb(foldLabel(k)) {
+				p.DestructiveVerbs = append(p.DestructiveVerbs, k)
+			}
+		}
 	}
 	return p, nil
 }
@@ -154,25 +169,101 @@ func inLabels(label string, labels []string) bool {
 	return false
 }
 
-// Decide clasifica el dialogo y elige el boton seguro. Es informativo solo si
-// el modelo lo leyo asi Y ni el titulo ni ningun boton tienen una palabra de
-// efecto. Informativo: boton de close_labels o, si hay un unico boton sin
-// efecto, ese. Con efecto: solo un boton de cancel_labels sin palabra de
-// efecto; nunca uno que confirme.
+// isVerb dice si w parece un infinitivo (-ar, -er, -ir).
+func isVerb(w string) bool {
+	return len(w) >= 4 && (strings.HasSuffix(w, "ar") || strings.HasSuffix(w, "er") || strings.HasSuffix(w, "ir"))
+}
+
+// stem quita la terminacion del infinitivo ("cerrar" -> "cerr") para que
+// tambien cuenten las formas conjugadas ("cerrará", "eliminado", "cancelación").
+func stem(w string) string {
+	if isVerb(w) && len(w) >= 6 {
+		return w[:len(w)-2]
+	}
+	return w
+}
+
+// mentions dice si alguna palabra de s es w o una forma de w: igual, o con
+// la misma raiz si w es un verbo de 6 letras o mas ("cerrar" ~ "cerrará").
+func mentions(s, w string) bool {
+	w = foldLabel(w)
+	if w == "" {
+		return false
+	}
+	r := stem(w)
+	for _, x := range words(s) {
+		if x == w || (r != w && len(r) >= 4 && strings.HasPrefix(x, r)) {
+			return true
+		}
+	}
+	return false
+}
+
+// neutralWords no cuentan al comparar un boton con el texto del dialogo: son
+// negaciones o la "x" de la esquina, nunca el verbo de la accion ("Esta accion
+// no se puede deshacer" no vuelve inseguro al boton "No").
+var neutralWords = map[string]bool{"no": true, "x": true, "×": true}
+
+// echoesDialog dice si el boton repite una palabra del titulo o del texto del
+// dialogo: en "¿Cerrar sesión?" [Cerrar, Cancelar], "Cerrar" confirma la
+// accion que el dialogo pregunta y nunca es una opcion segura.
+func echoesDialog(d Dialog, label string) bool {
+	for _, w := range words(label) {
+		if neutralWords[w] || len(w) < 2 {
+			continue
+		}
+		if mentions(d.Title, w) || mentions(d.Text, w) {
+			return true
+		}
+	}
+	return false
+}
+
+func isCorner(label string) bool {
+	l := foldLabel(label)
+	return l == "x" || l == "×" || l == ""
+}
+
+// Decide clasifica el dialogo y elige el boton seguro. El modelo solo puede
+// subir el riesgo, nunca bajarlo: el dialogo es con efecto si el modelo no lo
+// leyo informativo, si el titulo o un boton tienen una palabra de efecto
+// (effect_words), si el titulo o el texto tienen un verbo destructivo, o si ofrece a
+// la vez un boton de cancelar/no y otro que no lo es (forma de confirmacion),
+// o si un boton repite el verbo del dialogo ("¿Cerrar sesión?" [Cerrar]).
+// Informativo: boton de close_labels o, si hay un unico boton sin efecto, ese.
+// Con efecto: solo un boton de cancel_labels sin palabra de efecto; se
+// prefieren Cancelar/No/Volver, luego Cerrar, luego la "x". En ningun caso se
+// elige un boton que repite el verbo del dialogo.
 func (p DialogPolicy) Decide(d Dialog) DialogDecision {
 	effect := foldLabel(d.Kind) != "informativo" || p.hasEffectWord(d.Title)
-	for _, b := range d.Buttons {
-		if p.hasEffectWord(b.Label) {
+	for _, v := range p.DestructiveVerbs {
+		if mentions(d.Title, v) || mentions(d.Text, v) {
 			effect = true
 		}
 	}
+	negative, other := false, false
+	for _, b := range d.Buttons {
+		if p.hasEffectWord(b.Label) || echoesDialog(d, b.Label) {
+			effect = true
+		}
+		switch {
+		case isCorner(b.Label):
+		case inLabels(b.Label, p.CancelLabels) && !inLabels(b.Label, p.CloseLabels):
+			negative = true
+		default:
+			other = true
+		}
+	}
+	if negative && other {
+		effect = true
+	}
+	safe := func(b DialogButton) bool { return !p.hasEffectWord(b.Label) && !echoesDialog(d, b.Label) }
 	// Se prefiere un boton con texto a la "x" de la esquina (blanco chico).
-	pick := func(labels []string) *DialogButton {
-		for _, corner := range []bool{false, true} {
+	pick := func(labels []string, rank func(DialogButton) int) *DialogButton {
+		for r := 0; r < 3; r++ {
 			for i := range d.Buttons {
 				b := d.Buttons[i]
-				isCorner := foldLabel(b.Label) == "x" || foldLabel(b.Label) == "×" || foldLabel(b.Label) == ""
-				if isCorner == corner && inLabels(b.Label, labels) && !p.hasEffectWord(b.Label) {
+				if rank(b) == r && inLabels(b.Label, labels) && safe(b) {
 					return &b
 				}
 			}
@@ -180,12 +271,26 @@ func (p DialogPolicy) Decide(d Dialog) DialogDecision {
 		return nil
 	}
 	if effect {
-		return DialogDecision{Effect: true, Button: pick(p.CancelLabels)}
+		// 0: cancelar/no/volver; 1: cerrar (tambien es de cierre); 2: la x.
+		return DialogDecision{Effect: true, Button: pick(p.CancelLabels, func(b DialogButton) int {
+			switch {
+			case isCorner(b.Label):
+				return 2
+			case inLabels(b.Label, p.CloseLabels):
+				return 1
+			}
+			return 0
+		})}
 	}
-	if b := pick(p.CloseLabels); b != nil {
+	if b := pick(p.CloseLabels, func(b DialogButton) int {
+		if isCorner(b.Label) {
+			return 1
+		}
+		return 0
+	}); b != nil {
 		return DialogDecision{Button: b}
 	}
-	if len(d.Buttons) == 1 && foldLabel(d.Buttons[0].Label) != "" {
+	if len(d.Buttons) == 1 && foldLabel(d.Buttons[0].Label) != "" && safe(d.Buttons[0]) {
 		b := d.Buttons[0]
 		return DialogDecision{Button: &b}
 	}
