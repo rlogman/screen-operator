@@ -6,6 +6,8 @@ import (
 	"net/url"
 	"sync"
 	"time"
+
+	"screenoperator/internal/trace"
 )
 
 // Status es el estado interno de una tarea. La API lo traduce a los valores del
@@ -101,6 +103,10 @@ type Job struct {
 	Log     *slog.Logger
 	// Usage acumula pasos, tokens y costo de la tarea (GET /tasks/{id}/metrics).
 	Usage *UsageMeter
+	// Trace guarda los pasos y capturas de la tarea (SO_TRACE_DIR). Nunca es
+	// nil cuando lo crea el Manager; sin directorio no escribe en disco pero
+	// cada Step igual suma en Usage.
+	Trace *trace.Recorder
 }
 
 // Runner ejecuta una tarea. Debe respetar ctx: cuando se cancela (deadline,
