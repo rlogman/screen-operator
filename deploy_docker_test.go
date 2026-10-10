@@ -158,3 +158,30 @@ func TestE4_1_S3_DockerRunSinTeamTokenFalla(t *testing.T) {
 		t.Fatalf("el mensaje no nombra TEAM_TOKEN:\n%s", out)
 	}
 }
+
+func TestE4_2_S3_CheckEntrypointContraContenedor(t *testing.T) {
+	dockerBuild(t)
+	id := docker(t, "run", "-d", "-e", "TEAM_TOKEN=tok-docker-e4", "-e", "PORT=8080", "-p", "127.0.0.1::8080", imageTag)
+	t.Cleanup(func() { _ = exec.Command("docker", "rm", "-f", id).Run() })
+	base := "http://" + strings.Split(docker(t, "port", id, "8080/tcp"), "\n")[0]
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		resp, err := http.Get(base + "/health")
+		if err == nil {
+			resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				break
+			}
+		}
+		if time.Now().After(deadline) {
+			logs, _ := exec.Command("docker", "logs", id).CombinedOutput()
+			t.Fatalf("el contenedor no respondio /health:\n%s", logs)
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	code, out := runCheckScript(t, nil, base, "tok-docker-e4")
+	if code != 0 || !strings.Contains(out, "RESULTADO: entrypoint OK") {
+		t.Fatalf("check_entrypoint.sh contra el contenedor: codigo %d:\n%s", code, out)
+	}
+	t.Log(out)
+}
