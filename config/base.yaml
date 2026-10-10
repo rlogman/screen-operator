@@ -100,6 +100,22 @@ policy:
     require_unique_target: true
   unknown_values: fail
   stop_on_report: true
+  # Dialogos que bloquean la app al abrirla (incidente FR-0153). El modelo solo
+  # sube el riesgo, nunca lo baja: un dialogo es con efecto si el modelo no lo
+  # lee informativo, si el titulo o un boton tienen una palabra de efecto, si
+  # el titulo o el texto tienen un verbo de policy.destructive.keywords, si
+  # ofrece Cancelar/No/Volver junto a otro boton, o si un boton repite el verbo
+  # del dialogo ("¿Cerrar sesión?" [Cerrar]). Informativo: se cierra con un
+  # boton de close_labels (o el unico boton, si no tiene efecto). Con efecto:
+  # solo se cancela con cancel_labels (primero Cancelar/No/Volver, luego
+  # Cerrar, luego la x), nunca con un boton que repite el verbo del dialogo;
+  # si no hay, la tarea termina fallida nombrando el dialogo sin tocar nada.
+  dialogs:
+    enabled: true
+    max_on_open: 3
+    close_labels: [cerrar, aceptar, entendido, "ok", de acuerdo, continuar, listo, omitir, x, "×", close, got it, dismiss]
+    cancel_labels: [cancelar, cerrar, "no", volver, salir, x, "×", cancel, close]
+    effect_words: [eliminar, borrar, suprimir, confirmar, pagar, pago, anular, guardar, aplicar, enviar, cambios, aprobar, procesar, ejecutar, descartar, sobrescribir, reemplazar, restablecer, revertir, desactivar, activar, importar, exportar, transferir, "si", delete, confirm, save, apply, pay, submit, "yes"]
 
 # Hints de app opcionales. Vacio = agente generico que aprende la app dentro de la tarea.
 app: {}

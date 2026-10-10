@@ -25,6 +25,10 @@ import (
 //     por defecto, las del escritorio de SIGECOM (ver defCarteraXY).
 //   - SO_E2_6_HEADER_RECT ("x,y,w,h"): region del encabezado de la tabla que
 //     contiene 'Codigo'. Opcional, mismo criterio.
+//   - SO_E2_6_DISMISS_XY ("x,y" o "none"): clic previo para cerrar el dialogo
+//     que la app muestra al abrir. Por defecto el boton 'Entendido' del modal
+//     'Novedades de la version 4.2' de SIGECOM v4.2 (incidente FR-0153); sobre
+//     una pantalla sin modal el clic cae en un area vacia de la pagina de inicio.
 //
 // Los tests de escritorio se corren solo con `make test-desktop` (serializa
 // los paquetes con -p 1: todos comparten el mismo escritorio).
@@ -52,6 +56,13 @@ func TestE2_6_S5_CarteraFacturasMuestraTablaConCodigo(t *testing.T) {
 	if _, err := fmt.Sscanf(envOr("SO_E2_6_HEADER_RECT", defHeaderRect), "%d,%d,%d,%d", &hx, &hy, &hw, &hh); err != nil {
 		t.Fatalf("SO_E2_6_HEADER_RECT invalido (formato x,y,w,h): %v", err)
 	}
+	var dx, dy int
+	dismiss := envOr("SO_E2_6_DISMISS_XY", defDismissXY) != "none"
+	if dismiss {
+		if _, err := fmt.Sscanf(envOr("SO_E2_6_DISMISS_XY", defDismissXY), "%d,%d", &dx, &dy); err != nil {
+			t.Fatalf("SO_E2_6_DISMISS_XY invalido (formato x,y o none): %v", err)
+		}
+	}
 	record := os.Getenv("SO_E2_6_RECORD") == "1"
 	ctx := context.Background()
 	if tok := os.Getenv("SO_DESKTOP_TOKEN"); tok != "" {
@@ -68,6 +79,11 @@ func TestE2_6_S5_CarteraFacturasMuestraTablaConCodigo(t *testing.T) {
 	}
 	defer d.Close()
 	ex := NewExecutor(d, surf, perc)
+	if dismiss {
+		if _, err := ex.Click(ctx, dx, dy); err != nil {
+			t.Fatal(err)
+		}
+	}
 	if _, err := ex.Click(ctx, cx, cy); err != nil {
 		t.Fatal(err)
 	}
@@ -124,9 +140,13 @@ func TestE2_6_S5_CarteraFacturasMuestraTablaConCodigo(t *testing.T) {
 }
 
 // Coordenadas por defecto del escritorio de SIGECOM (1280x800), relevadas por
-// el validador de la iteracion 1. No son secretos; las variables de entorno
-// SO_E2_6_* las reemplazan si el escritorio cambia.
+// el validador de la iteracion 1 y revisadas sobre v4.2 (epica 10: menus y
+// encabezado en el mismo lugar, modal nuevo al abrir; la referencia del
+// encabezado se regrabo porque cambiaron los colores del tema). No son
+// secretos; las variables de entorno SO_E2_6_* las reemplazan si el
+// escritorio cambia.
 const (
+	defDismissXY  = "840,483"
 	defCarteraXY  = "204,48"
 	defFacturasXY = "208,76"
 	defHeaderRect = "14,184,1250,22"

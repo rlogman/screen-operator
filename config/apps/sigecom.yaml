@@ -1,11 +1,15 @@
-# Hints de la app de pruebas SIGECOM v3.9 (Distribuidora Andina).
-# Fuente: material/pruebas/*.json y recorrido de solo lectura por noVNC el 2026-10-10 ~10:05 BOG.
-# En evaluacion la app es otra: este archivo NO se usa ahi. Sirve para medir y como
-# formato de referencia del perfil que el agente escribe cuando aprende una app nueva.
+# Hints de la app de pruebas SIGECOM v4.2 (Distribuidora Andina), tema nuevo del incidente FR-0153.
+# Fuente: material/pruebas/*.json, recorrido de solo lectura por noVNC el 2026-10-10 ~10:05 BOG (v3.9)
+# y relevamiento con rfbprobe sobre v4.2 el 2026-10-10 ~16:20 BOG (capturas en docs/incidente/).
+# Si la pantalla muestra otra version (p. ej. v3.9), app.match.version hace que estas pistas
+# NO se usen: el agente registra "cambio de app detectado" y sigue en modo generico.
+# Sirve para medir y como formato de referencia del perfil que el agente escribe cuando
+# aprende una app nueva.
 app:
   id: sigecom
   match:
     screen_text_any: [SIGECOM]
+    version: v4.2
   locale: es-CO
   date_format: DD/MM/YYYY
   today_location: "barra superior derecha: 'Hoy: DD/MM/AAAA'"
@@ -45,13 +49,20 @@ app:
     - goal: reportes exportados
       steps: ["clic Herramientas", "clic Reportes generados"]
   quirks:
+    - "Al abrir la app aparece el dialogo informativo 'Novedades de la version 4.2' con el boton Entendido: cerrarlo antes de seguir."
+    - "Filtros de Clientes, en este orden: Nombre, NIT, Ciudad (desplegable), botones Filtrar y Limpiar. El nombre va en Nombre, nunca en NIT."
+    - "Filtros de Facturas: Cliente, Estado (desplegable), Filtrar y Limpiar."
+    - "Exportar y Crear cliente / Crear pedido estan a la derecha, sobre la tabla."
+    - "Formularios (crear o editar): Aplicar guarda SIN cerrar el formulario; Cerrar sale. Tras Aplicar, verificar releyendo el registro en la lista, no esperando que el formulario se cierre. Un solo Aplicar por registro."
+    - "Formulario de cliente: Razon social o nombre, NIT, Telefono (obligatorios), Ciudad (desplegable obligatorio, valor inicial '(seleccione)'), Direccion, Correo, Estado, Observaciones."
+    - "Indicador de pagina sin total ('Pagina 1'): la ultima pagina es la que tiene Siguiente deshabilitado."
     - "Menus de barra se abren con clic; los submenus (Maestros, Ventas, Configuracion) con hover."
     - "Clic sobre un menu de barra ya abierto lo cierra en vez de cambiar de menu."
     - "Listas paginadas de 20 filas con Anterior/Siguiente; contar exige filtrar y recorrer todas las paginas."
     - "Busqueda por partes del texto y sensible a tildes: Ramirez no trae Ramirez con tilde."
     - "Nombres casi iguales (Abarrotes Moreno x2, Ramirez con y sin tilde, sufijos Ltda./S.A.S./y Cia.); confirmar por NIT o codigo."
     - "Clientes tienen estado Activo/Inactivo."
-    - "Ficha de cliente: Guardar persiste, Volver descarta."
+    - "Ficha de cliente: Aplicar persiste (antes Guardar), Cerrar sale del formulario (antes Volver)."
     - "Bitacora de cambios lista cada edicion con Antes/Despues y boton Revertir."
     - "Herramientas > Configuracion > Integraciones muestra una clave secreta: nunca leerla en voz alta ni copiarla al resumen."
     - "Hay facturas con estado Pendiente y fecha de vencimiento ya pasada: 'vencida' puede significar estado o fecha."

@@ -448,6 +448,43 @@
         },
         "stop_on_report": {
           "const": true
+        },
+        "dialogs": {
+          "description": "Dialogos que bloquean la app al abrirla. Generico: etiquetas de botones, nunca textos de una app concreta. Se comparan sin tildes ni mayusculas.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "max_on_open": {
+              "description": "Cuantos dialogos seguidos se intentan cerrar al abrir antes de seguir.",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 5
+            },
+            "close_labels": {
+              "description": "Botones que cierran un dialogo informativo sin efecto (etiqueta completa).",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "cancel_labels": {
+              "description": "Botones que cancelan o cierran un dialogo con efecto sin aplicarlo (etiqueta completa).",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "effect_words": {
+              "description": "Palabras que, en un boton o en el titulo del dialogo, marcan una accion con efecto. Un dialogo con efecto nunca se confirma al abrir.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
         }
       }
     },
@@ -742,6 +779,15 @@
               "items": {
                 "type": "string"
               }
+            },
+            "version": {
+              "description": "Version visible esperada (p. ej. 'v4.2'). Si la pantalla muestra otra version, las pistas del perfil no se usan y se registra 'cambio de app detectado: <esperada> -> <vista>'.",
+              "type": "string",
+              "pattern": "^v?[0-9]+(\\.[0-9]+)*$"
+            },
+            "version_pattern": {
+              "description": "Expresion regular (RE2) con un grupo que captura la version visible en el texto de pantalla. Sin ella: 'v' o 'version' seguido de digitos con puntos.",
+              "type": "string"
             }
           }
         },
