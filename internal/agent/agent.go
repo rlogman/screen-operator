@@ -147,7 +147,7 @@ type Agent struct {
 	stable       bool     // la vista actual salio de una captura estable
 	lastNoEffect string   // ultima accion que no cambio la pantalla
 	recent       []string // ultimas acciones de pantalla
-	verifyNudged bool // ya se rechazo una vez un "fallida" sin intentar verificar
+	verifyNudged bool     // ya se rechazo una vez un "fallida" sin intentar verificar
 	// nextXY: centro de "siguiente" en pantalla segun la ultima extraccion.
 	nextX, nextY int
 	hasNextXY    bool
