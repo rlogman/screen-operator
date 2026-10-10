@@ -29,6 +29,9 @@ type Page struct {
 	// NextX, NextY: centro del boton "siguiente" en la imagen del extractor.
 	NextX, NextY int
 	HasNextXY    bool
+	// PrevDisabled: el lector informo que el boton "anterior" no existe o esta
+	// deshabilitado (evidencia de primera pagina). Sin dato = false.
+	PrevDisabled bool
 }
 
 // ParsePage interpreta la respuesta del extractor.
@@ -42,6 +45,10 @@ func ParsePage(content string) (Page, error) {
 			X          *float64 `json:"x"`
 			Y          *float64 `json:"y"`
 		} `json:"siguiente"`
+		Anterior *struct {
+			Visible    *bool `json:"visible"`
+			Habilitado *bool `json:"habilitado"`
+		} `json:"anterior"`
 		Pagina any `json:"pagina"`
 	}
 	dec := json.NewDecoder(strings.NewReader(llm.StripFences(content)))
@@ -96,6 +103,9 @@ func ParsePage(content string) (Page, error) {
 	if !p.NextVisible {
 		p.NextEnabled = false
 	}
+	if a := raw.Anterior; a != nil {
+		p.PrevDisabled = (a.Visible != nil && !*a.Visible) || (a.Habilitado != nil && !*a.Habilitado)
+	}
 	if raw.Pagina != nil {
 		p.Indicator = strings.TrimSpace(fmt.Sprint(raw.Pagina))
 	}
@@ -138,6 +148,8 @@ type Aggregator struct {
 	advances int          // avances de pagina desde la ultima extraccion
 	chainBad string       // sin indicador: por que la cadena de avances no es confiable
 	restart  bool         // la proxima extraccion reinicia el acumulado
+	firstSig string       // sin indicador: firma de la primera pagina verificada de la cadena
+	firstSet bool         // firstSig fue fijada (sobrevive a los reinicios)
 
 	Stopped  bool   // no hay que seguir avanzando (o la pagina no avanzo)
 	Complete bool   // se vieron todas las paginas
@@ -165,20 +177,34 @@ func (g *Aggregator) Same(keyCol, purpose string, filters map[string]string) boo
 func (g *Aggregator) NoteAdvance() { g.advances++ }
 
 var (
+	rePageOf    = regexp.MustCompile(`(?i)p(?:á|a)g(?:ina|e)?\.?\s*(\d+)\s*(?:de|of|/)\s*(\d+)`)
 	reIndicator = regexp.MustCompile(`(?i)(\d+)\s*(?:de|of|/)\s*(\d+)`)
-	rePageOnly  = regexp.MustCompile(`(?i)p(?:á|a)g(?:ina)?\.?\s*(\d+)`)
+	reRangeHead = regexp.MustCompile(`(?i)\d+\s*(?:-|–|\ba|\bto)\s*$`)
+	rePageOnly  = regexp.MustCompile(`(?i)p(?:á|a)g(?:ina|e)?\.?\s*(\d+)`)
 )
 
 // ParseIndicator lee el indicador de pagina: "Pagina N de M" da n y m;
-// "Pagina N" da solo n (m=0). ok=false si no hay numero de pagina.
+// "Pagina N" da solo n (m=0). ok=false si no hay numero de pagina. Un rango
+// de registros ("Mostrando 1-5 de 5", "Registros 1 a 20 de 45") no es un
+// numero de pagina: esa lista se trata como no numerada.
 func ParseIndicator(s string) (n, m int, ok bool) {
-	if sm := reIndicator.FindStringSubmatch(s); sm != nil {
-		n, _ = strconv.Atoi(sm[1])
-		m, _ = strconv.Atoi(sm[2])
-		if n >= 1 && m >= 1 && n <= m {
+	valid := func(a, b string) bool {
+		n, _ = strconv.Atoi(a)
+		m, _ = strconv.Atoi(b)
+		return n >= 1 && m >= 1 && n <= m
+	}
+	if sm := rePageOf.FindStringSubmatch(s); sm != nil && valid(sm[1], sm[2]) {
+		return n, m, true
+	}
+	for _, ix := range reIndicator.FindAllStringSubmatchIndex(s, -1) {
+		if reRangeHead.MatchString(s[:ix[0]]) {
+			continue // "1-5 de 5": es un rango de registros
+		}
+		if valid(s[ix[2]:ix[3]], s[ix[4]:ix[5]]) {
 			return n, m, true
 		}
 	}
+	n, m = 0, 0
 	if sm := rePageOnly.FindStringSubmatch(s); sm != nil {
 		n, _ = strconv.Atoi(sm[1])
 		if n >= 1 {
@@ -194,7 +220,9 @@ func (g *Aggregator) AddPage(p Page) (added int, stop bool) {
 	adv := g.advances
 	g.advances = 0
 	if g.restart {
+		fs, fset := g.firstSig, g.firstSet
 		*g = *NewAggregator(g.What, g.KeyCol, g.Purpose, g.Filters)
+		g.firstSig, g.firstSet = fs, fset
 		adv = 0
 	}
 	first := g.pages == 0
@@ -216,21 +244,35 @@ func (g *Aggregator) AddPage(p Page) (added int, stop bool) {
 	repeated := !first && ((len(p.Rows) > 0 && sig == g.lastSig) || (hasNum && n == g.lastNum))
 	g.lastSig = sig
 
+	// Un numero de pagina solo cuenta si se leyo: nunca se deduce de un
+	// avance (el clic pudo saltar paginas), ni para marcar la pagina vista ni
+	// para fijar el total.
 	switch {
 	case hasNum:
 		g.numbered = true
 	case repeated:
 		n = g.lastNum
-	case g.lastNum > 0 && adv == 1:
-		n = g.lastNum + 1 // sin numero en esta pagina: se deduce del avance unico
 	default:
 		n = 0
 	}
 	if m > g.total {
 		g.total = m
 	}
-	if n > 0 && !p.NextEnabled && n > g.total {
-		g.total = n // la ultima pagina (sin siguiente) fija el total
+	if hasNum && !p.NextEnabled && n > g.total {
+		g.total = n // la ultima pagina (sin siguiente), con su numero leido, fija el total
+	}
+	if first && !hasNum {
+		// Sin numero de pagina: la cadena debe empezar en la primera pagina,
+		// con "anterior" deshabilitado o ausente y, tras un reinicio, con las
+		// mismas filas que la primera pagina verificada.
+		switch {
+		case !p.PrevDisabled:
+			g.chainBad = "no consta que esta sea la primera pagina de la lista (el boton anterior esta habilitado o no se leyo su estado)"
+		case g.firstSet && sig != g.firstSig:
+			g.chainBad = "no volviste a la primera pagina: sus filas no coinciden con las de la primera pagina extraida"
+		case !g.firstSet:
+			g.firstSig, g.firstSet = sig, true
+		}
 	}
 	if !g.numbered && !first && !repeated && adv != 1 {
 		if adv == 0 {
@@ -284,7 +326,7 @@ func (g *Aggregator) completeness(p Page, repeated bool) (bool, string) {
 			return true, fmt.Sprintf("se extrajeron las %d paginas", g.total)
 		}
 		if !p.NextEnabled {
-			return false, "no se leyo el numero de esta ultima pagina: extraela de nuevo"
+			return false, "no se leyo el numero de esta ultima pagina (debe verse 'Pagina N'): extraela de nuevo"
 		}
 		return false, "hay pagina siguiente: haz UN clic en siguiente y extrae esa pagina"
 	}
@@ -299,6 +341,17 @@ func (g *Aggregator) completeness(p Page, repeated bool) (bool, string) {
 		return true, "la pagina repite la anterior y no hay pagina siguiente habilitada"
 	}
 	return true, "no hay pagina siguiente habilitada"
+}
+
+var reQuantity = regexp.MustCompile(`\b(?:cuantos|cuantas|total\w*|suma\w*|cantidad(?:es)?)\b`)
+
+// AsksQuantity indica si la orden (o los datos pedidos) piden una cantidad,
+// un total o una suma: "cuantos", "cuantas", "total", "suma", "cantidad", con
+// o sin tildes.
+func AsksQuantity(instruction string, asked []string) bool {
+	t := strings.ToLower(instruction + " " + strings.Join(asked, " "))
+	t = strings.NewReplacer("á", "a", "é", "e", "í", "i", "ó", "o", "ú", "u", "Á", "a", "Ú", "u", "Ó", "o").Replace(t)
+	return reQuantity.MatchString(t)
 }
 
 func (g *Aggregator) rowKey(r Row) string {

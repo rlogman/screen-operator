@@ -89,6 +89,12 @@ type State struct {
 	Steps       int // decisiones del modelo en localizar/actuar/verificar
 	Commits     []Action
 	Extract     *Aggregator
+	// NeedAggregate es pegajoso: se activa con una extraccion de conteo o suma
+	// o con una pregunta que pide cantidad, total o suma. Mientras este activo,
+	// "terminada" exige un agregado calculado en codigo. NeedAggregateWhy dice
+	// que lo activo.
+	NeedAggregate    bool
+	NeedAggregateWhy string
 	// LastCommitStep es el paso del ultimo commit; VerifyFrom el paso en que
 	// empezo la ultima fase de verificacion.
 	LastCommitStep int
@@ -203,6 +209,9 @@ func (a *Agent) Run(ctx context.Context, instruction string) Outcome {
 	}
 	if err := a.classify(ctx); err != nil {
 		return a.failErr(ctx, "no se pudo clasificar la orden", err)
+	}
+	if st.Class.Question && AsksQuantity(st.Instruction, st.Class.Asked) {
+		st.NeedAggregate, st.NeedAggregateWhy = true, "la orden pide una cantidad, total o suma"
 	}
 	if d := a.Guard.Classified(st); d.Deny {
 		return a.fail(ctx, d.Reason, d.Identifiers)
@@ -627,6 +636,9 @@ func (a *Agent) doExtract(ctx context.Context, act Action) error {
 	if err != nil {
 		return err
 	}
+	if (act.Purpose == "conteo" || act.Purpose == "suma") && !st.NeedAggregate {
+		st.NeedAggregate, st.NeedAggregateWhy = true, "extrajiste con purpose \""+act.Purpose+"\""
+	}
 	if st.Extract == nil || !st.Extract.Same(act.KeyCol, act.Purpose, act.Filters) {
 		st.Extract = NewAggregator(act.What, act.KeyCol, act.Purpose, act.Filters)
 	}
@@ -771,12 +783,13 @@ func (a *Agent) doFinish(ctx context.Context, act Action, phaseBefore Phase, rej
 		a.view = nil // verificar sobre una captura nueva
 		return Outcome{}, false, verifyHint(st)
 	}
-	if f.Aggregate == "" && st.Class.Question && st.Extract != nil && (st.Extract.Purpose == "conteo" || st.Extract.Purpose == "suma") {
-		// Un conteo o una suma nunca se acepta "a ojo": el numero lo pone el codigo.
+	if f.Aggregate == "" && st.NeedAggregate {
+		// Un conteo o una suma nunca se acepta "a ojo": el numero lo pone el
+		// codigo. El flag es pegajoso: cambiar de purpose o no extraer no lo apaga.
 		if *rejects > 3 {
-			return a.fail(ctx, "la respuesta de "+st.Extract.Purpose+" no vino calculada por el codigo", nil), true, ""
+			return a.fail(ctx, "la respuesta (conteo o suma) no vino calculada por el codigo sobre todas las paginas", nil), true, ""
 		}
-		return Outcome{}, false, a.rejectFinish(rejects, act, "extrajiste con purpose \""+st.Extract.Purpose+"\": termina con \"agregado\":\"conteo\" (o \"suma:<columna>\") para que el codigo calcule el numero; no lo pongas a ojo en datos")
+		return Outcome{}, false, a.rejectFinish(rejects, act, st.NeedAggregateWhy+": extrae la lista con extract en cada pagina y termina con \"agregado\":\"conteo\" (o \"suma:<columna>\") para que el codigo calcule el numero; no lo pongas a ojo en datos")
 	}
 	if f.Aggregate != "" {
 		if st.Extract == nil || st.Extract.Pages() == 0 {
@@ -907,7 +920,7 @@ func (a *Agent) final(_ context.Context, done bool, reason string, ids []string,
 		ids = append(append([]string(nil), f.Identifiers...), ids...)
 	}
 	r.Identifiers = uniq(ids)
-	if done && st.Class.Question && st.Extract != nil && st.Extract.Pages() > 0 {
+	if done && f != nil && f.Aggregate != "" && st.Extract != nil && st.Extract.Pages() > 0 {
 		r.Notes = append(r.Notes, fmt.Sprintf("Conteo en código sobre %d páginas extraídas (%d filas únicas).", st.Extract.Pages(), len(st.Extract.Rows())))
 	}
 	s := a.Cfg.Summary.Build(r)
