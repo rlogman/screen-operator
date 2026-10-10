@@ -140,13 +140,14 @@ type Agent struct {
 	// estable antes de consumir un paso esperando (por defecto 2).
 	StableRetries int
 
-	st        *State
-	hints     string
-	view      *View // imagen actual del modelo (nil = capturar de nuevo)
-	full      *screen.ModelShot
-	stable    bool // la vista actual salio de una captura estable
-	deadline  time.Time
-	parseErrs int
+	st           *State
+	hints        string
+	view         *View // imagen actual del modelo (nil = capturar de nuevo)
+	full         *screen.ModelShot
+	stable       bool   // la vista actual salio de una captura estable
+	lastNoEffect string // ultima accion que no cambio la pantalla
+	deadline     time.Time
+	parseErrs    int
 }
 
 func (a *Agent) init() {
@@ -394,7 +395,11 @@ func (a *Agent) ask(ctx context.Context, purpose string, role llm.Role, user llm
 	if a.Trace != nil && shot != nil {
 		_ = a.Trace.Screenshot(shot)
 	}
-	sys := llm.Message{Role: "system", Parts: []llm.Part{llm.TextPart(SystemPrompt())}}
+	sysText := SystemPrompt()
+	if purpose == "extraer" {
+		sysText = ExtractSystemPrompt()
+	}
+	sys := llm.Message{Role: "system", Parts: []llm.Part{llm.TextPart(sysText)}}
 	req := llm.Request{Model: role.Model, Temperature: role.Temperature, MaxTokens: role.MaxTokens, JSON: true, Purpose: purpose,
 		ReasoningEffort: role.Reasoning, Messages: []llm.Message{sys, user}}
 	var total llm.Usage
@@ -622,6 +627,12 @@ func (a *Agent) doExtract(ctx context.Context, act Action) error {
 	}
 	added, stop := st.Extract.AddPage(page)
 	msgStop := "hay pagina siguiente: avanza y vuelve a extraer"
+	if page.HasNextXY && page.NextEnabled {
+		if page.NextX >= 0 && page.NextY >= 0 && page.NextX < full.Img.Bounds().Dx() && page.NextY < full.Img.Bounds().Dy() {
+			x, y := full.ToScreen(page.NextX, page.NextY)
+			msgStop += fmt.Sprintf(" (el lector ubico 'siguiente' en %d,%d)", x, y)
+		}
+	}
 	if stop {
 		msgStop = "extraccion completa (" + st.Extract.Stop + ")"
 	}
@@ -679,6 +690,14 @@ func (a *Agent) doScreenAction(ctx context.Context, act Action) error {
 	reason := ""
 	if act.Reason != "" {
 		reason = " (" + truncate(act.Reason, 120) + ")"
+	}
+	if !out.Changed && act.String() == a.lastNoEffect {
+		result += "; ES LA SEGUNDA VEZ SIN EFECTO: no repitas este punto; pide zoom para ubicar el elemento o prueba otro camino"
+	}
+	if out.Changed {
+		a.lastNoEffect = ""
+	} else {
+		a.lastNoEffect = act.String()
 	}
 	a.record(fmt.Sprintf("%d. [%s] %s%s → %s", st.Steps, st.Phase, act, reason, result))
 	if out.Stable && out.Screen != nil {

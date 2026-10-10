@@ -30,6 +30,9 @@ func render(name string, data any) string {
 // SystemPrompt es el prompt de sistema (generico, sin pistas de app).
 func SystemPrompt() string { return render("system", nil) }
 
+// ExtractSystemPrompt es el prompt de sistema del lector de tablas.
+func ExtractSystemPrompt() string { return render("system_extract", nil) }
+
 // stepData es lo que ve el modelo en cada paso, ademas de la imagen.
 type stepData struct {
 	Instruction  string

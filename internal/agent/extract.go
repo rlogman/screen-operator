@@ -26,6 +26,9 @@ type Page struct {
 	NextVisible bool
 	NextEnabled bool
 	Indicator   string
+	// NextX, NextY: centro del boton "siguiente" en la imagen del extractor.
+	NextX, NextY int
+	HasNextXY    bool
 }
 
 // ParsePage interpreta la respuesta del extractor.
@@ -34,8 +37,10 @@ func ParsePage(content string) (Page, error) {
 		Columnas  []string          `json:"columnas"`
 		Filas     []json.RawMessage `json:"filas"`
 		Siguiente *struct {
-			Visible    *bool `json:"visible"`
-			Habilitado *bool `json:"habilitado"`
+			Visible    *bool    `json:"visible"`
+			Habilitado *bool    `json:"habilitado"`
+			X          *float64 `json:"x"`
+			Y          *float64 `json:"y"`
 		} `json:"siguiente"`
 		Pagina any `json:"pagina"`
 	}
@@ -83,6 +88,9 @@ func ParsePage(content string) (Page, error) {
 		}
 		if raw.Siguiente.Habilitado != nil {
 			p.NextEnabled = *raw.Siguiente.Habilitado
+		}
+		if raw.Siguiente.X != nil && raw.Siguiente.Y != nil {
+			p.NextX, p.NextY, p.HasNextXY = int(*raw.Siguiente.X+0.5), int(*raw.Siguiente.Y+0.5), true
 		}
 	}
 	if !p.NextVisible {
