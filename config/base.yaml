@@ -78,6 +78,9 @@ models:
     # Epica 8.2 (docs/model-selection.md): Sonnet 5.5 decide solo los pasos trabados.
     # Sonnet y Gemini 3.8 Flash rechazan reasoning_effort none (HTTP 400); minimal da 0 tokens de razonamiento.
     escalation: { model: anthropic/claude-sonnet-5.5, temperature: 0, max_tokens: 1000, reasoning_effort: minimal, price_in_usd_per_mtok: 2.00, price_out_usd_per_mtok: 10.00 }
+    # Historia 8.1: grounder APAGADO por defecto (sin medir en tareas reales).
+    # Para activarlo, descomentar (ver docs/model-selection.md, "Grounder"):
+    # grounder: { model: bytedance/ui-tars-1.5-7b, temperature: 0, max_tokens: 64, price_in_usd_per_mtok: 0.10, price_out_usd_per_mtok: 0.20 }
   # Escalamiento: disparadores, N pasos en la misma fase, maximo de pasos escalados y tope de costo por tarea.
   escalation:
     triggers: [sin_efecto, cierre_rechazado, sin_avance]
