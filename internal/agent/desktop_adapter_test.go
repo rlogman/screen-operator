@@ -62,7 +62,9 @@ func TestAdapterSendAndCloseDoNotHang(t *testing.T) {
 	d := fakes.NewDriver(1280, 800, color.RGBA{})
 	d.BlockInput = make(chan struct{}) // nunca se libera: Pointer/Key bloquean
 	dd := &DriverDialer{Loader: testLoader(t), SendTimeout: 100 * time.Millisecond, CloseTimeout: 100 * time.Millisecond,
-		Open: func(context.Context, string, string, screen.Surface, time.Duration) (screen.Driver, error) { return d, nil }}
+		Open: func(context.Context, string, string, screen.Surface, time.Duration) (screen.Driver, error) {
+			return d, nil
+		}}
 	s, err := dd.Dial(context.Background(), req("wss://escritorio.test/websockify", "Pw-send-2"))
 	if err != nil {
 		t.Fatal(err)
@@ -93,7 +95,9 @@ func TestAdapterSendAndCloseDoNotHang(t *testing.T) {
 	d2 := fakes.NewDriver(1280, 800, color.RGBA{})
 	d2.BlockInput = make(chan struct{})
 	dd2 := &DriverDialer{Loader: testLoader(t), SendTimeout: 150 * time.Millisecond, CloseTimeout: 150 * time.Millisecond,
-		Open: func(context.Context, string, string, screen.Surface, time.Duration) (screen.Driver, error) { return d2, nil }}
+		Open: func(context.Context, string, string, screen.Surface, time.Duration) (screen.Driver, error) {
+			return d2, nil
+		}}
 	runner := tasks.RunnerFunc(func(ctx context.Context, job *tasks.Job) tasks.Result {
 		for ctx.Err() == nil {
 			_ = job.Input.Send(tasks.Event{Kind: tasks.EventPointer, X: 5, Y: 5})
@@ -136,7 +140,9 @@ func TestAdapterRecoversDriverPanics(t *testing.T) {
 		t.Fatalf("Dial con panic = %v", err)
 	}
 	pd := panicDriver{fakes.NewDriver(64, 40, color.RGBA{})}
-	dd.Open = func(context.Context, string, string, screen.Surface, time.Duration) (screen.Driver, error) { return pd, nil }
+	dd.Open = func(context.Context, string, string, screen.Surface, time.Duration) (screen.Driver, error) {
+		return pd, nil
+	}
 	s, err := dd.Dial(context.Background(), req("wss://escritorio.test/websockify", "Pw-panic-4"))
 	if err != nil {
 		t.Fatal(err)

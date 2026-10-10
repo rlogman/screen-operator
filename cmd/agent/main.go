@@ -44,7 +44,6 @@ const (
 	DefaultPort = "8080"
 )
 
-
 // listenFunc abre el listener; los tests lo reemplazan (el sandbox no deja bindear).
 type listenFunc func(network, addr string) (net.Listener, error)
 

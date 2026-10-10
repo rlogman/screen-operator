@@ -240,7 +240,9 @@ func lookupCol(r Row, col string) (string, bool) {
 
 var spaces = regexp.MustCompile(`\s+`)
 
-func norm(s string) string { return strings.ToLower(spaces.ReplaceAllString(strings.TrimSpace(s), " ")) }
+func norm(s string) string {
+	return strings.ToLower(spaces.ReplaceAllString(strings.TrimSpace(s), " "))
+}
 
 func sortedMap(m map[string]string) []string {
 	out := make([]string, 0, len(m))

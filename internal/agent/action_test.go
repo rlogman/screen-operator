@@ -73,8 +73,8 @@ func TestE6_2_S2_OutOfImageNamesField(t *testing.T) {
 func TestE6_2_S3_RepairOnceThenStepError(t *testing.T) {
 	// (a) Salida no JSON, reparacion valida: el paso sigue con la accion reparada.
 	chat := fakes.NewScriptedLLM(jsonClassifyEdit, jsonOrient,
-		"voy a hacer clic en el menu",              // no es JSON
-		`{"action":"click","x":10,"y":10}`,         // reparacion
+		"voy a hacer clic en el menu",      // no es JSON
+		`{"action":"click","x":10,"y":10}`, // reparacion
 		`{"action":"finish","estado":"fallida","razon":"prueba"}`)
 	a, _ := newTestAgent(t, chat, gray(), 10)
 	out := a.Run(context.Background(), "Corrige la dirección de X")

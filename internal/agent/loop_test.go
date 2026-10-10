@@ -29,7 +29,9 @@ func editScript() *fakes.ScriptedLLM {
 
 func TestE6_3_S1_PhasesInOrderAndTraced(t *testing.T) {
 	d := gray()
-	d.OnClick = func(d *fakes.Driver, x, y int) { d.Fill(image.Rect(0, 0, 50, 50), color.RGBA{uint8(x), uint8(y), 0, 255}) }
+	d.OnClick = func(d *fakes.Driver, x, y int) {
+		d.Fill(image.Rect(0, 0, 50, 50), color.RGBA{uint8(x), uint8(y), 0, 255})
+	}
 	chat := editScript()
 	a, tr := newTestAgent(t, chat, d, 20)
 	out := a.Run(context.Background(), "Corrige la dirección del cliente Distribuciones El Faro: ahora es Calle 80 # 24-15.")
