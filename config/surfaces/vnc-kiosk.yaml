@@ -31,3 +31,6 @@ surface:
     poll_ms: 150
     stable_frames: 2
     diff_threshold: 0.002
+    # Tras un clic el repintado tarda hasta 1 s (README): sin cambio visible antes de
+    # este horizonte, la pantalla quieta se acepta como resultado de la accion.
+    change_horizon_ms: 1000
