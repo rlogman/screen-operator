@@ -317,6 +317,17 @@
               "grounder"
             ]
           }
+        },
+        "call_timeout_s": {
+          "description": "Timeout de cada intento de llamada al modelo.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_retries": {
+          "description": "Reintentos ante 429, 5xx o error de red.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 5
         }
       }
     },
@@ -584,6 +595,24 @@
               "description": "Tras una accion, cuanto se espera a que aparezca un cambio antes de aceptar la pantalla quieta como resultado. Cubre el repintado retrasado. 0 = no esperar cambio.",
               "type": "integer",
               "minimum": 0
+            },
+            "horizon_by_action": {
+              "description": "Override de change_horizon_ms por tipo de accion (click, double_click, hover, type, key, scroll). Una accion sin entrada usa change_horizon_ms.",
+              "type": "object",
+              "additionalProperties": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "propertyNames": {
+                "enum": [
+                  "click",
+                  "double_click",
+                  "hover",
+                  "type",
+                  "key",
+                  "scroll"
+                ]
+              }
             }
           }
         }
@@ -639,6 +668,20 @@
         "max_tokens": {
           "type": "integer",
           "minimum": 1
+        },
+        "price_in_usd_per_mtok": {
+          "description": "Precio de entrada en US$ por millon de tokens. Se usa si la respuesta no trae usage.cost.",
+          "type": "number",
+          "minimum": 0
+        },
+        "price_out_usd_per_mtok": {
+          "description": "Precio de salida en US$ por millon de tokens.",
+          "type": "number",
+          "minimum": 0
+        },
+        "reasoning_effort": {
+          "description": "reasoning.effort de OpenRouter. none apaga el razonamiento (los tokens de razonamiento cuentan dentro de max_tokens).",
+          "enum": ["none", "minimal", "low", "medium", "high"]
         }
       }
     },

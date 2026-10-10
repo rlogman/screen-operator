@@ -68,6 +68,16 @@ func Same(a, b *image.RGBA, threshold float64) bool {
 // estaba quieta en ese momento. Changed informa si hubo cambio respecto a
 // before, pero ya no adelanta la salida.
 func (s *Settler) Wait(ctx context.Context, before *image.RGBA) (Settled, error) {
+	return s.wait(ctx, before, s.cfg.ChangeHorizonMS)
+}
+
+// WaitAction es Wait con el horizonte de cambio del tipo de accion
+// (surface.settle.horizon_by_action, o change_horizon_ms si no hay override).
+func (s *Settler) WaitAction(ctx context.Context, before *image.RGBA, kind string) (Settled, error) {
+	return s.wait(ctx, before, s.cfg.Horizon(kind))
+}
+
+func (s *Settler) wait(ctx context.Context, before *image.RGBA, horizonMS int) (Settled, error) {
 	start := time.Now()
 	minWait, maxWait, poll := ms(s.cfg.MinWaitMS), ms(s.cfg.MaxWaitMS), ms(s.cfg.PollMS)
 	if poll <= 0 {
@@ -81,8 +91,8 @@ func (s *Settler) Wait(ctx context.Context, before *image.RGBA) (Settled, error)
 		need = 1
 	}
 	deadline := start.Add(maxWait)
-	horizon := start.Add(ms(s.cfg.ChangeHorizonMS))
-	afterAction := before != nil && s.cfg.ChangeHorizonMS > 0
+	horizon := start.Add(ms(horizonMS))
+	afterAction := before != nil && horizonMS > 0
 
 	prev, err := s.d.Capture(ctx)
 	if err != nil {

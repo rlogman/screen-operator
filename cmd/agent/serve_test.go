@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"screenoperator/internal/tasks"
 	"strings"
 	"sync"
 	"testing"
@@ -196,14 +197,14 @@ func TestE3_1_S4_ListensOnPortDefault8080(t *testing.T) {
 	}
 }
 
-// El agente desplegado ya cumple el contrato: cada tarea termina fallida con
-// el resumen del runner provisional.
-func TestAgentProvisionalRunnerFailsTasks(t *testing.T) {
+// El agente real esta conectado: una tarea contra un escritorio que no responde
+// termina fallida con el resumen de conexion (el runner provisional ya no existe).
+func TestAgentRealRunnerFailsUnreachableDesktop(t *testing.T) {
 	_, ln, _, stop := startAgent(t, map[string]string{"TEAM_TOKEN": "t0k"})
 	defer stop()
 	c := ln.client()
 	req, _ := http.NewRequest(http.MethodPost, "http://agent/tasks",
-		strings.NewReader(`{"tarea":"x","escritorio":{"url":"wss://h/websockify","password":"p"}}`))
+		strings.NewReader(`{"tarea":"x","escritorio":{"url":"ws://127.0.0.1:1/websockify","password":"Pw-serve-77"}}`))
 	req.Header.Set("Authorization", "Bearer t0k")
 	resp, err := c.Do(req)
 	if err != nil {
@@ -215,7 +216,7 @@ func TestAgentProvisionalRunnerFailsTasks(t *testing.T) {
 	if resp.StatusCode != 200 || created["task_id"] == "" {
 		t.Fatalf("POST /tasks = %d %v", resp.StatusCode, created)
 	}
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(15 * time.Second) // el adaptador reintenta la conexion (2 esperas de 3 s)
 	for {
 		g, _ := http.NewRequest(http.MethodGet, "http://agent/tasks/"+created["task_id"], nil)
 		g.Header.Set("Authorization", "Bearer t0k")
@@ -227,7 +228,7 @@ func TestAgentProvisionalRunnerFailsTasks(t *testing.T) {
 		_ = json.NewDecoder(resp.Body).Decode(&st)
 		resp.Body.Close()
 		if st["estado"] == "fallida" {
-			if st["resumen"] != ProvisionalSummary {
+			if st["resumen"] != tasks.SummaryDialFail {
 				t.Fatalf("resumen = %q", st["resumen"])
 			}
 			return

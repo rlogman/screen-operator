@@ -49,6 +49,17 @@ type SettleConfig struct {
 	StableFrames    int     `json:"stable_frames"`
 	DiffThreshold   float64 `json:"diff_threshold"`
 	ChangeHorizonMS int     `json:"change_horizon_ms"`
+	// HorizonByAction reemplaza ChangeHorizonMS para un tipo de accion
+	// (click, double_click, hover, type, key, scroll).
+	HorizonByAction map[string]int `json:"horizon_by_action"`
+}
+
+// Horizon devuelve el horizonte de cambio para un tipo de accion.
+func (c SettleConfig) Horizon(kind string) int {
+	if v, ok := c.HorizonByAction[kind]; ok {
+		return v
+	}
+	return c.ChangeHorizonMS
 }
 
 // Perception es perception.* (config/base.yaml).

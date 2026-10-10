@@ -100,6 +100,10 @@ type Job struct {
 	ID      string
 	Request Request
 	Input   *Gate
+	// Session es la sesion que abrio el Dialer (nil si no hay Dialer). El
+	// Runner puede leer de ella (capturas) pero toda entrada debe pasar por
+	// Input, que la corta al reportar.
+	Session Session
 	Log     *slog.Logger
 	// Usage acumula pasos, tokens y costo de la tarea (GET /tasks/{id}/metrics).
 	Usage *UsageMeter
