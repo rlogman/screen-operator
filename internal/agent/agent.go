@@ -89,6 +89,12 @@ type State struct {
 	Steps       int // decisiones del modelo en localizar/actuar/verificar
 	Commits     []Action
 	Extract     *Aggregator
+	// NeedAggregate es pegajoso: se activa con una extraccion de conteo o suma
+	// o con una pregunta que pide cantidad, total o suma. Mientras este activo,
+	// "terminada" exige un agregado calculado en codigo. NeedAggregateWhy dice
+	// que lo activo.
+	NeedAggregate    bool
+	NeedAggregateWhy string
 	// LastCommitStep es el paso del ultimo commit; VerifyFrom el paso en que
 	// empezo la ultima fase de verificacion.
 	LastCommitStep int
@@ -147,6 +153,10 @@ type Agent struct {
 	stable       bool     // la vista actual salio de una captura estable
 	lastNoEffect string   // ultima accion que no cambio la pantalla
 	recent       []string // ultimas acciones de pantalla
+	verifyNudged bool     // ya se rechazo una vez un "fallida" sin intentar verificar
+	// nextXY: centro de "siguiente" en pantalla segun la ultima extraccion.
+	nextX, nextY int
+	hasNextXY    bool
 	deadline     time.Time
 	parseErrs    int
 }
@@ -203,6 +213,9 @@ func (a *Agent) Run(ctx context.Context, instruction string) Outcome {
 	}
 	if err := a.classify(ctx); err != nil {
 		return a.failErr(ctx, "no se pudo clasificar la orden", err)
+	}
+	if st.Class.Question && AsksQuantity(st.Instruction, st.Class.Asked) {
+		st.NeedAggregate, st.NeedAggregateWhy = true, "la orden pide una cantidad, total o suma"
 	}
 	if d := a.Guard.Classified(st); d.Deny {
 		return a.fail(ctx, d.Reason, d.Identifiers)
@@ -639,22 +652,32 @@ func (a *Agent) doExtract(ctx context.Context, act Action) error {
 	if err != nil {
 		return err
 	}
+	if (act.Purpose == "conteo" || act.Purpose == "suma") && !st.NeedAggregate {
+		st.NeedAggregate, st.NeedAggregateWhy = true, "extrajiste con purpose \""+act.Purpose+"\""
+	}
 	if st.Extract == nil || !st.Extract.Same(act.KeyCol, act.Purpose, act.Filters) {
 		st.Extract = NewAggregator(act.What, act.KeyCol, act.Purpose, act.Filters)
 	}
-	added, stop := st.Extract.AddPage(page)
+	added, _ := st.Extract.AddPage(page)
 	if o, ok := a.Guard.(PageObserver); ok {
 		o.ObservePage(st, act, page) // epica 7: relectura para unicidad y verificacion
 	}
-	msgStop := "hay pagina siguiente: avanza y vuelve a extraer"
-	if page.HasNextXY && page.NextEnabled {
+	a.hasNextXY = false
+	msgStop := st.Extract.Stop
+	if st.Extract.Complete {
+		msgStop = "extraccion completa (" + st.Extract.Stop + ")"
+	} else if st.Extract.Stopped {
+		msgStop = "extraccion INCOMPLETA: " + st.Extract.Stop
+	}
+	if page.HasNextXY && page.NextEnabled && !st.Extract.Complete {
 		if page.NextX >= 0 && page.NextY >= 0 && page.NextX < full.Img.Bounds().Dx() && page.NextY < full.Img.Bounds().Dy() {
 			x, y := full.ToScreen(page.NextX, page.NextY)
-			msgStop += fmt.Sprintf(" (el lector ubico 'siguiente' en %d,%d)", x, y)
+			a.nextX, a.nextY, a.hasNextXY = x, y, true
+			msgStop += fmt.Sprintf(" (el lector ubico 'siguiente' en %d,%d; un solo clic por pagina)", x, y)
 		}
 	}
-	if stop {
-		msgStop = "extraccion completa (" + st.Extract.Stop + ")"
+	if page.Indicator != "" {
+		msgStop += "; indicador: " + truncate(page.Indicator, 40)
 	}
 	a.record(fmt.Sprintf("%d. [%s] %s — %d filas visibles, %d nuevas; acumulado %d unicas, %d cumplen filtros; %s",
 		st.Steps, st.Phase, act, len(page.Rows), added, len(st.Extract.Rows()), st.Extract.Count(), msgStop))
@@ -730,11 +753,18 @@ func (a *Agent) doScreenAction(ctx context.Context, act Action) error {
 	} else {
 		a.lastNoEffect = act.String()
 	}
+	pageAdv := out.Changed && st.Extract != nil && a.isPageAdvance(act)
+	if pageAdv {
+		st.Extract.NoteAdvance()
+		if !st.Extract.Complete {
+			result += "; si la lista cambio de pagina, EXTRAE esta pagina ahora, antes de volver a avanzar"
+		}
+	}
 	a.recent = append(a.recent, act.String())
 	if len(a.recent) > 4 {
 		a.recent = a.recent[len(a.recent)-4:]
 	}
-	if n := countEqual(a.recent, act.String()); n >= 3 && out.Changed {
+	if n := countEqual(a.recent, act.String()); n >= 3 && out.Changed && !pageAdv {
 		// Un clic que abre y cierra lo mismo (p. ej. un menu) cambia la pantalla
 		// pero no avanza.
 		result += fmt.Sprintf("; REPETISTE ESTA ACCION %d VECES SIN AVANZAR: un clic sobre un menu abierto lo cierra; usa hover sobre la opcion o el submenu, pide zoom o prueba otro camino", n)
@@ -765,6 +795,13 @@ func (a *Agent) doScreenAction(ctx context.Context, act Action) error {
 func (a *Agent) doFinish(ctx context.Context, act Action, phaseBefore Phase, rejects *int) (Outcome, bool, string) {
 	st := a.st
 	f := act.Finish
+	if f.Status == StatusFailed && writes(st.Class.Intent) && len(st.Commits) > 0 && st.Phase == PhaseVerify &&
+		st.Steps-st.VerifyFrom <= 1 && !a.verifyNudged {
+		// Tras un commit, "fallida" sin haber intentado verificar puede negar un
+		// cambio que si quedo: una sola vez se pide verificar antes de decidir.
+		a.verifyNudged = true
+		return Outcome{}, false, a.rejectFinish(rejects, act, "todavia no verificaste: busca o reabre el registro y lee el valor guardado; recien entonces decide terminada (verificado) o fallida")
+	}
 	if f.Status == StatusFailed {
 		a.record(fmt.Sprintf("%d. [%s] %s — el modelo pide cerrar como fallida: %s", st.Steps, st.Phase, act, f.Reason))
 		d := a.Guard.BeforeFinish(st, f)
@@ -787,15 +824,23 @@ func (a *Agent) doFinish(ctx context.Context, act Action, phaseBefore Phase, rej
 		a.view = nil // verificar sobre una captura nueva
 		return Outcome{}, false, verifyHint(st)
 	}
+	if f.Aggregate == "" && st.NeedAggregate {
+		// Un conteo o una suma nunca se acepta "a ojo": el numero lo pone el
+		// codigo. El flag es pegajoso: cambiar de purpose o no extraer no lo apaga.
+		if *rejects > 3 {
+			return a.fail(ctx, "la respuesta (conteo o suma) no vino calculada por el codigo sobre todas las paginas", nil), true, ""
+		}
+		return Outcome{}, false, a.rejectFinish(rejects, act, st.NeedAggregateWhy+": extrae la lista con extract en cada pagina y termina con \"agregado\":\"conteo\" (o \"suma:<columna>\") para que el codigo calcule el numero; no lo pongas a ojo en datos")
+	}
 	if f.Aggregate != "" {
 		if st.Extract == nil || st.Extract.Pages() == 0 {
 			return Outcome{}, false, a.rejectFinish(rejects, act, "pediste agregado pero no hay filas extraidas: usa extract en cada pagina")
 		}
-		if !st.Extract.Done {
+		if !st.Extract.Complete {
 			if *rejects > 3 {
-				return a.fail(ctx, "la extraccion de la lista quedo incompleta", nil), true, ""
+				return a.fail(ctx, "la extraccion de la lista quedo incompleta: "+st.Extract.Stop, nil), true, ""
 			}
-			return Outcome{}, false, a.rejectFinish(rejects, act, "la extraccion no esta completa: avanza a la pagina siguiente y extrae de nuevo")
+			return Outcome{}, false, a.rejectFinish(rejects, act, "la extraccion no esta completa: "+st.Extract.Stop)
 		}
 		val, err := a.aggregate(f.Aggregate)
 		if err != nil {
@@ -811,6 +856,29 @@ func (a *Agent) doFinish(ctx context.Context, act Action, phaseBefore Phase, rej
 	}
 	a.record(fmt.Sprintf("%d. [%s] %s — aceptado", st.Steps, st.Phase, act))
 	return a.final(ctx, true, f.Reason, nil, f), true, ""
+}
+
+// isPageAdvance reconoce un clic que avanza de pagina: cerca del
+// "siguiente" que ubico el lector, o descrito como tal en la razon.
+func (a *Agent) isPageAdvance(act Action) bool {
+	switch act.Kind {
+	case KindClick, KindDoubleClick:
+	default:
+		return false
+	}
+	if a.hasNextXY {
+		dx, dy := act.X-a.nextX, act.Y-a.nextY
+		if dx*dx+dy*dy <= 40*40 {
+			return true
+		}
+	}
+	r := strings.ToLower(act.Reason)
+	for _, w := range []string{"siguiente", "next", "proxima", "próxima", "avanza"} {
+		if strings.Contains(r, w) {
+			return true
+		}
+	}
+	return false
 }
 
 func (a *Agent) rejectFinish(rejects *int, act Action, why string) string {
@@ -893,7 +961,7 @@ func (a *Agent) final(_ context.Context, done bool, reason string, ids []string,
 		ids = append(append([]string(nil), f.Identifiers...), ids...)
 	}
 	r.Identifiers = uniq(ids)
-	if done && st.Class.Question && st.Extract != nil && st.Extract.Pages() > 0 {
+	if done && f != nil && f.Aggregate != "" && st.Extract != nil && st.Extract.Pages() > 0 {
 		r.Notes = append(r.Notes, fmt.Sprintf("Conteo en código sobre %d páginas extraídas (%d filas únicas).", st.Extract.Pages(), len(st.Extract.Rows())))
 	}
 	s := a.redact(a.Cfg.Summary.Build(r)) // epica 7.5: ultimo paso antes de publicar
