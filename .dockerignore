@@ -1,0 +1,14 @@
+# Nada secreto ni pesado entra al contexto de build (historia 4.1).
+.env
+.env.*
+.git
+.gitignore
+.claude/
+.artifex/
+material/*.zip
+bin/
+traces/
+runs/
+*.zip
+.DS_Store
+EXECUTOR_REPORT.md
