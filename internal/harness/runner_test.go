@@ -79,6 +79,9 @@ func TestE5_1_S1_RunsCaseResetPostPollCheckJSONL(t *testing.T) {
 	if !ok || chk["pass"] != true || len(chk["checks"].([]any)) != 3 {
 		t.Fatalf("check = %v", l["check"])
 	}
+	if recs[0].Puntaje == nil || !recs[0].Puntaje.Correcta {
+		t.Fatalf("puntaje = %+v", recs[0].Puntaje)
+	}
 	// Ningun secreto en el JSONL.
 	for _, s := range []string{"vnc-pass-123", "team-tok", "desk-tok"} {
 		if strings.Contains(out.String(), s) {

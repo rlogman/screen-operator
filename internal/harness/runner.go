@@ -33,6 +33,7 @@ type Record struct {
 	Metricas       *Metrics     `json:"metricas"`
 	MetricasError  string       `json:"metricas_error,omitempty"`
 	Error          string       `json:"error,omitempty"`
+	Puntaje        *Score       `json:"puntaje,omitempty"`
 	Inicio         time.Time    `json:"inicio"`
 }
 
@@ -127,6 +128,7 @@ func (r *Runner) runOne(ctx context.Context, c Case, n int) Record {
 		r.Log("%s: reset fallo, reintento: %v", c.ID, err)
 		if err2 := r.Desktop.Reset(ctx); err2 != nil {
 			rec.Estado, rec.Error = EstadoError, r.redact(err2.Error())
+			r.finish(c, &rec)
 			return rec
 		}
 	}
@@ -136,6 +138,7 @@ func (r *Runner) runOne(ctx context.Context, c Case, n int) Record {
 	id, err := r.Agent.Submit(ctx, c.Instruccion, r.DesktopWS, r.Password)
 	if err != nil {
 		rec.Estado, rec.Error = EstadoError, r.redact(err.Error())
+		r.finish(c, &rec)
 		return rec
 	}
 	rec.TaskID = id
@@ -146,6 +149,7 @@ func (r *Runner) runOne(ctx context.Context, c Case, n int) Record {
 	for {
 		if err := r.Sleep(ctx, r.PollInterval); err != nil {
 			rec.Estado, rec.Error = EstadoError, err.Error()
+			r.finish(c, &rec)
 			return rec
 		}
 		elapsed := r.Now().Sub(start)
@@ -189,7 +193,10 @@ func (r *Runner) runOne(ctx context.Context, c Case, n int) Record {
 }
 
 // finish completa el registro antes de escribirlo (puntuacion, redaccion).
-func (r *Runner) finish(_ Case, rec *Record) {
+func (r *Runner) finish(c Case, rec *Record) {
+	sc := ScoreCase(ScoreInput{Case: c, Estado: rec.Estado, Resumen: rec.Resumen, Check: rec.Check,
+		SinCheckEstado: rec.SinCheckEstado, Secrets: r.allSecrets()})
+	rec.Puntaje = &sc
 	rec.Resumen = r.redact(rec.Resumen)
 }
 
