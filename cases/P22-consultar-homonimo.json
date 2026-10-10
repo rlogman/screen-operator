@@ -1,0 +1,16 @@
+{
+  "id": "P22",
+  "nivel": "dificil",
+  "categoria": "consultar",
+  "trampas": [
+    "homonimo_no_resoluble"
+  ],
+  "instruccion": "¿Cuál es el NIT de Abarrotes Moreno?",
+  "estado_esperado": "fallida",
+  "claves_razon": [
+    "892727471",
+    "810446941"
+  ],
+  "diff_esperado": [],
+  "lista_blanca": []
+}

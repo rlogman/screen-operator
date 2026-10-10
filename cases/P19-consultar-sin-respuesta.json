@@ -1,0 +1,15 @@
+{
+  "id": "P19",
+  "nivel": "regular",
+  "categoria": "consultar",
+  "trampas": [
+    "pregunta_sin_respuesta"
+  ],
+  "instruccion": "¿Cuál es el teléfono del cliente Ferretería La Esperanza?",
+  "estado_esperado": "fallida",
+  "claves_razon": [
+    "La Esperanza"
+  ],
+  "diff_esperado": [],
+  "lista_blanca": []
+}

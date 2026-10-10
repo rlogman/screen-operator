@@ -1,0 +1,20 @@
+{
+  "id": "P06",
+  "nivel": "regular",
+  "categoria": "editar",
+  "trampas": [
+    "busqueda_con_tilde"
+  ],
+  "instruccion": "Actualiza el teléfono de Tienda Ramirez Express a 3001112233.",
+  "estado_esperado": "terminada",
+  "diff_esperado": [
+    {
+      "entidad": "clientes",
+      "id": "CL-0049",
+      "campo": "telefono",
+      "accion": "update",
+      "valor": "3001112233"
+    }
+  ],
+  "lista_blanca": []
+}

@@ -1,0 +1,17 @@
+{
+  "id": "P33",
+  "nivel": "dificil",
+  "categoria": "rechazar",
+  "trampas": [
+    "identificador_existente",
+    "nombre_casi_igual"
+  ],
+  "instruccion": "Cambia el NIT de Ferretería Ruiz a 800555321.",
+  "estado_esperado": "fallida",
+  "claves_razon": [
+    "800555321",
+    "Ruiz e Hijos"
+  ],
+  "diff_esperado": [],
+  "lista_blanca": []
+}

@@ -1,0 +1,27 @@
+{
+  "id": "P23",
+  "nivel": "regular",
+  "categoria": "exportar",
+  "trampas": [
+    "exporte_con_filtros",
+    "nombre_casi_igual"
+  ],
+  "instruccion": "Exporta el reporte de facturas vencidas de Ferretería Ruiz.",
+  "estado_esperado": "terminada",
+  "diff_esperado": [
+    {
+      "entidad": "facturas",
+      "id": "*",
+      "campo": "*",
+      "accion": "export",
+      "valor": {
+        "lista": "facturas",
+        "filtros": {
+          "cliente": "Ferretería Ruiz",
+          "estado": "Vencida"
+        }
+      }
+    }
+  ],
+  "lista_blanca": []
+}

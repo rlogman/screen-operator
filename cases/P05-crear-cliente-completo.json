@@ -1,0 +1,53 @@
+{
+  "id": "P05",
+  "nivel": "regular",
+  "categoria": "crear",
+  "trampas": [],
+  "instruccion": "Crea el cliente Supermercado El Trébol: NIT 901444777, teléfono 3184442211, ciudad Cali, dirección Avenida 6N # 23-45, correo compras@eltrebol.co.",
+  "estado_esperado": "terminada",
+  "diff_esperado": [
+    {
+      "entidad": "clientes",
+      "id": "nuevo",
+      "campo": "nombre",
+      "accion": "create",
+      "valor": "Supermercado El Trébol"
+    },
+    {
+      "entidad": "clientes",
+      "id": "nuevo",
+      "campo": "nit",
+      "accion": "create",
+      "valor": "901444777"
+    },
+    {
+      "entidad": "clientes",
+      "id": "nuevo",
+      "campo": "telefono",
+      "accion": "create",
+      "valor": "3184442211"
+    },
+    {
+      "entidad": "clientes",
+      "id": "nuevo",
+      "campo": "ciudad",
+      "accion": "create",
+      "valor": "Cali"
+    },
+    {
+      "entidad": "clientes",
+      "id": "nuevo",
+      "campo": "direccion",
+      "accion": "create",
+      "valor": "Avenida 6N # 23-45"
+    },
+    {
+      "entidad": "clientes",
+      "id": "nuevo",
+      "campo": "correo",
+      "accion": "create",
+      "valor": "compras@eltrebol.co"
+    }
+  ],
+  "lista_blanca": []
+}

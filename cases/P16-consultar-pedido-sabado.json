@@ -1,0 +1,13 @@
+{
+  "id": "P16",
+  "nivel": "regular",
+  "categoria": "consultar",
+  "trampas": [
+    "fecha_relativa"
+  ],
+  "instruccion": "¿Cuál es el código del pedido registrado el sábado?",
+  "estado_esperado": "terminada",
+  "respuesta_esperada": "PD-0253",
+  "diff_esperado": [],
+  "lista_blanca": []
+}

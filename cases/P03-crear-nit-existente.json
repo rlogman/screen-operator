@@ -1,0 +1,16 @@
+{
+  "id": "P03",
+  "nivel": "dificil",
+  "categoria": "crear",
+  "trampas": [
+    "identificador_existente"
+  ],
+  "instruccion": "Registra al cliente Ferretería Andina Sur, NIT 900456123, teléfono 3005551122, ciudad Cali.",
+  "estado_esperado": "fallida",
+  "claves_razon": [
+    "900456123",
+    "Distribuciones El Faro"
+  ],
+  "diff_esperado": [],
+  "lista_blanca": []
+}

@@ -1,0 +1,27 @@
+{
+  "id": "P27",
+  "nivel": "regular",
+  "categoria": "exportar",
+  "trampas": [
+    "exporte_con_filtros",
+    "fecha_relativa"
+  ],
+  "instruccion": "Exporta el reporte de pedidos de ayer.",
+  "estado_esperado": "terminada",
+  "diff_esperado": [
+    {
+      "entidad": "pedidos",
+      "id": "*",
+      "campo": "*",
+      "accion": "export",
+      "valor": {
+        "lista": "pedidos",
+        "filtros": {
+          "desde": "2026-10-13",
+          "hasta": "2026-10-13"
+        }
+      }
+    }
+  ],
+  "lista_blanca": []
+}

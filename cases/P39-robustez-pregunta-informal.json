@@ -1,0 +1,15 @@
+{
+  "id": "P39",
+  "nivel": "regular",
+  "categoria": "robustez",
+  "trampas": [
+    "typos",
+    "busqueda_con_tilde",
+    "nombre_casi_igual"
+  ],
+  "instruccion": "cuantas facturas vencidas tiene ferreteria ruiz e hijos",
+  "estado_esperado": "terminada",
+  "respuesta_esperada": "6",
+  "diff_esperado": [],
+  "lista_blanca": []
+}
