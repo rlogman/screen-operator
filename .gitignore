@@ -6,3 +6,4 @@ traces/
 runs/
 *.zip
 .DS_Store
+.artifex/desktop.lock/
