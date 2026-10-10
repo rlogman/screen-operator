@@ -36,8 +36,12 @@ scripts/check_entrypoint.sh http://localhost:8080 t0k
 2. Busca el repositorio `screen-operator` y elígelo.
 3. Elige **Add variables** (no **Deploy Now**): así el primer deploy ya arranca con el token. Sin
    `TEAM_TOKEN` el agente termina con código 1 a propósito y el deploy falla.
-4. Railway construye con el `Dockerfile` de la raíz. Lo fija `railway.json`
-   (`"builder": "DOCKERFILE"`) y, además, Railway usa siempre un Dockerfile cuando lo encuentra.
+4. Railway construye con el `Dockerfile` de la raíz porque siempre usa un Dockerfile cuando lo
+   encuentra. `railway.json` **no** aplica en un servicio creado hoy: Railway marcó Config as Code
+   como obsoleto y los servicios nuevos no pueden adoptarlo
+   (https://docs.railway.com/infrastructure-as-code). Queda en el repo solo como referencia.
+5. **Obligatorio:** en **Settings** del servicio, escribe `/health` en el campo del health endpoint
+   (detalle en la sección 3). En un servicio nuevo nadie lo configura por ti.
 
 La imagen (ver `Dockerfile`):
 
