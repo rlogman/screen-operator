@@ -112,7 +112,7 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout,
 		return 1
 	}
 	mgr := tasks.NewManager(tasks.Options{
-		Runner:   &agent.Runner{Loader: loader, Getenv: getenv, NewGuard: guard.New},
+		Runner:   &agent.Runner{Loader: loader, Getenv: getenv, NewGuard: guard.New, GuardFor: guard.ForTask(getenv)},
 		Dialer:   &agent.DriverDialer{Loader: loader},
 		Budget:   budget,
 		Logger:   log,

@@ -136,6 +136,10 @@ type Action struct {
 	Target        string
 	ConfirmDialog bool // confirma el dialogo que abrio un commit anterior sobre el mismo objetivo
 
+	// Label es el texto del elemento bajo un click, leido con zoom antes de
+	// consultar al guardrail (epica 7.3-S4). "" = no se leyo.
+	Label string
+
 	// finish (solicitud: el estado final lo fija el loop tras verificar)
 	Finish *FinishRequest
 }
@@ -173,7 +177,7 @@ func (a Action) String() string {
 		r := a.Region
 		return fmt.Sprintf("zoom(%d,%d,%d,%d)", r.Min.X, r.Min.Y, r.Dx(), r.Dy())
 	case KindExtract:
-		return fmt.Sprintf("extract(%q, clave=%s)", a.What, a.KeyCol)
+		return fmt.Sprintf("extract(%q, columna_id=%s)", a.What, a.KeyCol)
 	case KindCommit:
 		return fmt.Sprintf("commit(%d,%d, %q, objetivo=%s)", a.X, a.Y, a.What, a.Target)
 	case KindFinish:

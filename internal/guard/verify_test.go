@@ -1,0 +1,337 @@
+package guard
+
+import (
+	"context"
+	"strings"
+	"testing"
+
+	"screenoperator/internal/agent"
+)
+
+func editState() *agent.State {
+	return st("Corrige la dirección del cliente Distribuciones El Faro: ahora es Calle 80 # 24-15.", agent.IntentEdit,
+		"Distribuciones El Faro", map[string]string{"direccion": "Calle 80 # 24-15"})
+}
+
+func finishDone(evidence string) *agent.FinishRequest {
+	return &agent.FinishRequest{Status: agent.StatusDone, Reason: "guardado", Verified: true, Evidence: evidence}
+}
+
+func TestE7_4_S1_ReadBackMatchesIsDone(t *testing.T) {
+	g := New().(*Guard)
+	s := editState()
+	g.BeforeAction(s, commit("CL-0007", "Guardar cliente"))
+	s.Phase = agent.PhaseVerify
+	g.ObservePage(s, extract("datos", "Campo", nil), page([]string{"Campo", "Valor"}, []string{"Código", "CL-0007"}, []string{"Dirección", "Calle 80 # 24-15 "}))
+	if d := g.BeforeFinish(s, finishDone("")); d.Deny {
+		t.Fatalf("rechazada: %s", d.Reason)
+	}
+	// Extremo a extremo con el loop.
+	chat := &routerLLM{script: []string{
+		`{"intencion":"editar","entidad":"cliente","objetivo":"Distribuciones El Faro","valores":{"direccion":"Calle 80 # 24-15"},"pregunta":false,"datos_pedidos":[],"fechas":[],"faltantes":[],"razon_rechazo":"","plan":"editar"}`,
+		orient,
+		`{"fase":"actuar","action":"type","x":400,"y":350,"text":"Calle 80 # 24-15","replace":true}`,
+		`{"fase":"actuar","action":"commit","x":600,"y":700,"what":"Guardar cliente CL-0007","target":"CL-0007"}`,
+		`{"fase":"verificar","action":"extract","what":"ficha del cliente","key":"Campo","purpose":"datos"}`,
+		`{"columnas":["Campo","Valor"],"filas":[["Código","CL-0007"],["Dirección","Calle 80 # 24-15"]],"siguiente":{"visible":false,"habilitado":false},"pagina":null}`,
+		`{"action":"finish","estado":"terminada","razon":"direccion guardada","entidad":"cliente","id_registro":"CL-0007","cambios":["direccion = Calle 80 # 24-15"],"verificado":true,"evidencia":"Calle 80 # 24-15"}`,
+	}}
+	a, _ := newAgent(t, chat, gray())
+	out := a.Run(context.Background(), s.Instruction)
+	if !out.Done {
+		t.Fatalf("no termino: %q\n%v", out.Summary, out.State.History)
+	}
+}
+
+func TestE7_4_S2_ReadBackDiffersIsFailedNamingBoth(t *testing.T) {
+	g := New().(*Guard)
+	s := editState()
+	g.BeforeAction(s, commit("CL-0007", "Guardar cliente"))
+	s.Phase = agent.PhaseVerify
+	g.ObservePage(s, extract("datos", "Campo", nil), page([]string{"Campo", "Valor"}, []string{"Dirección", "Calle 80 # 24-1"}))
+	d := g.BeforeFinish(s, finishDone("Calle 80 # 24-15"))
+	if !d.Deny || !strings.Contains(d.Reason, `"Calle 80 # 24-15"`) || !strings.Contains(d.Reason, `"Calle 80 # 24-1"`) {
+		t.Fatalf("decision = %+v", d)
+	}
+	// Solo con la evidencia del modelo: tambien exacta (24-150 no es 24-15).
+	g2 := New().(*Guard)
+	s2 := editState()
+	if d := g2.BeforeFinish(s2, finishDone("la ficha muestra Calle 80 # 24-150")); !d.Deny {
+		t.Fatal("aceptó 24-150 como 24-15")
+	}
+	if d := g2.BeforeFinish(s2, finishDone("la ficha muestra calle 80 # 24-15")); !d.Deny {
+		t.Fatal("las mayusculas deben compararse exactas")
+	}
+}
+
+func createState() *agent.State {
+	return st("Registra al cliente Papelería Los Andes, NIT 901234567.", agent.IntentCreate, "Papelería Los Andes",
+		map[string]string{"nombre": "Papelería Los Andes", "nit": "901234567"})
+}
+
+// createdThenSaved deja un guard con la busqueda previa completa (sin
+// resultados) y un commit de creacion, en fase verificar.
+func createdThenSaved(t *testing.T) (*Guard, *agent.State) {
+	t.Helper()
+	s := createState()
+	g := New().(*Guard)
+	g.BeforeAction(s, agent.Action{Kind: agent.KindType, Phase: agent.PhaseLocate, Text: "901234567", Replace: true})
+	g.ObservePage(s, extract("candidatos", "Código", nil), page(createCols))
+	if d := g.BeforeAction(s, commit("901234567", "Guardar cliente")); d.Deny {
+		t.Fatalf("commit bloqueado: %s", d.Reason)
+	}
+	s.Phase = agent.PhaseVerify
+	return g, s
+}
+
+var createCols = []string{"Código", "Nombre", "NIT"}
+
+func TestE7_4_S3_CreateRequiresExactlyOneByID(t *testing.T) {
+	// Sin relectura: pista de buscar por identificador y luego no terminada.
+	g, s := createdThenSaved(t)
+	if h := g.ReviewFinish(s, finishDone("creado")); !strings.Contains(h, "identificador") || !strings.Contains(h, "candidatos") {
+		t.Fatalf("sin relectura no pidio buscar por identificador: %q", h)
+	}
+	// La evidencia escrita por el modelo no reemplaza la busqueda.
+	if d := g.BeforeFinish(s, finishDone("CL-0051 Papelería Los Andes NIT 901234567")); !d.Deny || !strings.Contains(d.Reason, "no se buscó el registro creado por su identificador") {
+		t.Fatalf("evidencia textual aceptada: %+v", d)
+	}
+
+	// Exactamente uno en la lista filtrada por el NIT, completa -> terminada.
+	g, s = createdThenSaved(t)
+	g.BeforeAction(s, agent.Action{Kind: agent.KindType, Phase: agent.PhaseVerify, Text: "901234567", Replace: true})
+	g.ObservePage(s, extract("candidatos", "Código", nil), page(createCols, []string{"CL-0051", "Papelería Los Andes", "901234567"}))
+	if h := g.ReviewFinish(s, finishDone("")); h != "" {
+		t.Fatalf("pista con la busqueda hecha: %q", h)
+	}
+	if d := g.BeforeFinish(s, finishDone("")); d.Deny {
+		t.Fatalf("un registro: %s", d.Reason)
+	}
+
+	// Dos registros con el mismo NIT -> fallida por duplicado nombrando los codigos.
+	g, s = createdThenSaved(t)
+	g.BeforeAction(s, agent.Action{Kind: agent.KindType, Phase: agent.PhaseVerify, Text: "901234567", Replace: true})
+	g.ObservePage(s, extract("candidatos", "Código", nil), page(createCols, []string{"CL-0051", "Papelería Los Andes", "901234567"}, []string{"CL-0052", "Papelería Los Andes", "901234567"}))
+	d := g.BeforeFinish(s, finishDone(""))
+	if !d.Deny || !strings.Contains(d.Reason, "duplicado") || !strings.Contains(d.Reason, "CL-0051") || !strings.Contains(d.Reason, "CL-0052") {
+		t.Fatalf("decision = %+v", d)
+	}
+
+	// Lista filtrada pero incompleta (la ultima pagina ofrece 'siguiente') -> no terminada.
+	g, s = createdThenSaved(t)
+	g.BeforeAction(s, agent.Action{Kind: agent.KindType, Phase: agent.PhaseVerify, Text: "901234567", Replace: true})
+	p := page(createCols, []string{"CL-0051", "Papelería Los Andes", "901234567"})
+	p.NextVisible, p.NextEnabled = true, true
+	g.ObservePage(s, extract("candidatos", "Código", nil), p)
+	if d := g.BeforeFinish(s, finishDone("")); !d.Deny || !strings.Contains(d.Reason, "incompleta") {
+		t.Fatalf("busqueda incompleta aceptada: %+v", d)
+	}
+
+	// Candidatos sin filtrar por el identificador (lista general con una fila) -> no cuenta.
+	g, s = createdThenSaved(t)
+	g.ObservePage(s, extract("candidatos", "Código", nil), page(createCols, []string{"CL-0051", "Papelería Los Andes", "901234567"}))
+	if d := g.BeforeFinish(s, finishDone("")); !d.Deny {
+		t.Fatal("candidatos sin filtrar por el identificador aceptados")
+	}
+}
+
+// Falso exito del validador: la ficha del registro recien creado tiene una
+// fila por construccion; no es una busqueda por identificador.
+func TestE7_4_S3_RecordSheetIsNotASearch(t *testing.T) {
+	g, s := createdThenSaved(t)
+	g.ObservePage(s, extract("datos", "Campo", nil), page([]string{"Código", "Nombre", "NIT"}, []string{"CL-0051", "Papelería Los Andes", "901234567"}))
+	if h := g.ReviewFinish(s, finishDone("CL-0051")); !strings.Contains(h, "identificador") {
+		t.Fatalf("la ficha silencio la pista: %q", h)
+	}
+	if d := g.BeforeFinish(s, finishDone("CL-0051")); !d.Deny || !strings.Contains(d.Reason, "no se buscó el registro creado por su identificador") {
+		t.Fatalf("la ficha se aceptó como verificación: %+v", d)
+	}
+
+	// Extremo a extremo: ficha "datos" con 1 fila + finish -> pista y luego fallida.
+	chat := &routerLLM{script: []string{
+		`{"intencion":"crear","entidad":"cliente","objetivo":"Papelería Los Andes","valores":{"nombre":"Papelería Los Andes","nit":"901234567"},"pregunta":false,"datos_pedidos":[],"fechas":[],"faltantes":[],"razon_rechazo":"","plan":"crear"}`,
+		orient,
+		`{"fase":"localizar","action":"type","x":300,"y":120,"text":"901234567","replace":true}`,
+		`{"fase":"localizar","action":"extract","what":"resultados de la busqueda","key":"Código","purpose":"candidatos"}`,
+		`{"columnas":["Código","Nombre","NIT"],"filas":[],"siguiente":{"visible":false,"habilitado":false},"pagina":null}`,
+		`{"fase":"actuar","action":"commit","x":600,"y":700,"what":"Guardar cliente","target":"901234567"}`,
+		`{"fase":"verificar","action":"extract","what":"ficha del cliente creado","key":"Código","purpose":"datos"}`,
+		`{"columnas":["Código","Nombre","NIT"],"filas":[["CL-0051","Papelería Los Andes","901234567"]],"siguiente":{"visible":false,"habilitado":false},"pagina":null}`,
+		`{"action":"finish","estado":"terminada","razon":"cliente creado","entidad":"cliente","id_registro":"CL-0051","verificado":true,"evidencia":"CL-0051 Papelería Los Andes 901234567"}`,
+		`{"action":"finish","estado":"terminada","razon":"cliente creado","entidad":"cliente","id_registro":"CL-0051","verificado":true,"evidencia":"CL-0051 Papelería Los Andes 901234567"}`,
+	}}
+	a, _ := newAgent(t, chat, gray())
+	out := a.Run(context.Background(), s.Instruction)
+	if out.Done {
+		t.Fatalf("terminada con solo la ficha: %q", out.Summary)
+	}
+	hinted := false
+	for _, h := range out.State.History {
+		if strings.Contains(h, "filtro") && strings.Contains(h, "candidatos") {
+			hinted = true
+		}
+	}
+	if !hinted {
+		t.Fatalf("sin pista en el historial: %v", out.State.History)
+	}
+}
+
+func TestE7_4_S4_ExportOneNewReportWithFilters(t *testing.T) {
+	s := st("Exporta el reporte de pedidos entregados en septiembre de 2026.", agent.IntentExport, "pedidos",
+		map[string]string{"estado": "Entregado", "periodo": "septiembre de 2026"})
+	cols := []string{"Código", "Lista", "Filtros", "Fecha"}
+	old := []string{"RP-0001", "Facturas", "Estado=Vencida", "13/10/2026"}
+	run := func(post ...[]string) agent.Decision {
+		g := New().(*Guard)
+		g.ObservePage(s, extract("datos", "Código", nil), page(cols, old))
+		g.BeforeAction(s, commit("pedidos", "Exportar pedidos"))
+		s.Phase = agent.PhaseVerify
+		g.ObservePage(s, extract("datos", "Código", nil), page(cols, post...))
+		return g.BeforeFinish(s, finishDone(""))
+	}
+	if d := run(old, []string{"RP-0002", "Pedidos", "Estado=Entregado; 01/09/2026-30/09/2026", "14/10/2026"}); d.Deny {
+		t.Fatalf("un reporte nuevo: %s", d.Reason)
+	}
+	if d := run(old, []string{"RP-0002", "Pedidos", "Estado=Entregado", "14/10/2026"}, []string{"RP-0003", "Pedidos", "Estado=Entregado", "14/10/2026"}); !d.Deny || !strings.Contains(d.Reason, "duplicado") {
+		t.Fatalf("dos nuevos: %+v", d)
+	}
+	if d := run(old, []string{"RP-0002", "Pedidos", "Estado=Pendiente", "14/10/2026"}); !d.Deny {
+		t.Fatal("filtros distintos aceptados")
+	}
+	if d := run(old); !d.Deny {
+		t.Fatal("sin reporte nuevo aceptado")
+	}
+}
+
+func TestE7_4_S5_UnreadableVerificationIsFailed(t *testing.T) {
+	g := New().(*Guard)
+	s := editState()
+	g.BeforeAction(s, commit("CL-0007", "Guardar cliente"))
+	s.Phase = agent.PhaseVerify
+	d := g.BeforeFinish(s, finishDone(""))
+	if !d.Deny || !strings.Contains(d.Reason, "no se pudo") {
+		t.Fatalf("decision = %+v", d)
+	}
+	// Extremo a extremo: verificado sin evidencia ni lectura -> fallida.
+	chat := &routerLLM{script: []string{
+		`{"intencion":"editar","entidad":"cliente","objetivo":"Distribuciones El Faro","valores":{"direccion":"Calle 80 # 24-15"},"pregunta":false,"datos_pedidos":[],"fechas":[],"faltantes":[],"razon_rechazo":"","plan":"editar"}`,
+		orient,
+		`{"fase":"actuar","action":"commit","x":600,"y":700,"what":"Guardar cliente","target":"CL-0007"}`,
+		`{"fase":"verificar","action":"click","x":200,"y":300}`,
+		`{"action":"finish","estado":"terminada","razon":"ok","verificado":true}`,
+	}}
+	a, _ := newAgent(t, chat, gray())
+	out := a.Run(context.Background(), s.Instruction)
+	if out.Done {
+		t.Fatalf("terminada sin poder leer: %q", out.Summary)
+	}
+}
+
+// Modal de confirmacion al guardar: un commit que quedo pendiente de un
+// dialogo no se reporta terminada.
+func TestConfirmDialogPendingIsNotDone(t *testing.T) {
+	script := func(confirm bool) []string {
+		s := []string{
+			`{"intencion":"editar","entidad":"cliente","objetivo":"Distribuciones El Faro","valores":{"direccion":"Calle 80 # 24-15"},"pregunta":false,"datos_pedidos":[],"fechas":[],"faltantes":[],"razon_rechazo":"","plan":"editar"}`,
+			orient,
+			`{"fase":"actuar","action":"commit","x":600,"y":700,"what":"Guardar cliente","target":"CL-0007"}`,
+		}
+		if confirm {
+			s = append(s, `{"fase":"actuar","action":"commit","x":640,"y":420,"what":"Aceptar confirmacion de guardado","target":"CL-0007","dialogo":true}`)
+		}
+		return append(s,
+			`{"fase":"verificar","action":"extract","what":"ficha del cliente","key":"Campo","purpose":"datos"}`,
+			`{"columnas":["Campo","Valor"],"filas":[["Código","CL-0007"],["Dirección","Calle 80 # 24-15"]],"siguiente":{"visible":false,"habilitado":false},"pagina":null}`,
+			`{"action":"finish","estado":"terminada","razon":"ok","verificado":true,"evidencia":"Calle 80 # 24-15"}`,
+			`{"action":"finish","estado":"terminada","razon":"ok","verificado":true,"evidencia":"Calle 80 # 24-15"}`)
+	}
+	pending := `{"dialogo":true,"texto":"¿Confirma guardar los cambios del cliente CL-0007? Aceptar / Cancelar"}`
+	chat := &routerLLM{script: script(false), dialog: []string{pending}}
+	a, _ := newAgent(t, chat, gray())
+	out := a.Run(context.Background(), "Corrige la dirección del cliente Distribuciones El Faro: ahora es Calle 80 # 24-15.")
+	if out.Done || !strings.Contains(out.Summary, "diálogo") {
+		t.Fatalf("resumen = %q", out.Summary)
+	}
+	// Confirmado: termina.
+	chat = &routerLLM{script: script(true), dialog: []string{pending, `{"dialogo":false,"texto":""}`}}
+	a, _ = newAgent(t, chat, gray())
+	out = a.Run(context.Background(), "Corrige la dirección del cliente Distribuciones El Faro: ahora es Calle 80 # 24-15.")
+	if !out.Done {
+		t.Fatalf("confirmado y no termino: %q\n%v", out.Summary, out.State.History)
+	}
+}
+
+// Falso exito medido en E3 (27 en vez de 45): el indicador de pagina manda.
+func TestIncompletePagesBlockAnswer(t *testing.T) {
+	g := New().(*Guard)
+	s := st("¿Cuántas facturas vencidas tiene Ferretería Ruiz?", agent.IntentQuery, "Ferretería Ruiz", nil)
+	s.Phase = agent.PhaseVerify
+	cols := []string{"Número", "Estado"}
+	g.ObservePage(s, extract("conteo", "Número", nil), agent.Page{Columns: cols, Indicator: "Página 1 de 3", Rows: page(cols, []string{"F-1", "Vencida"}).Rows})
+	g.ObservePage(s, extract("conteo", "Número", nil), agent.Page{Columns: cols, Indicator: "Página 2 de 3", Rows: page(cols, []string{"F-2", "Vencida"}).Rows})
+	g.ObservePage(s, extract("conteo", "Número", nil), agent.Page{Columns: cols, Indicator: "Página 2 de 3", Rows: page(cols, []string{"F-2", "Vencida"}).Rows})
+	f := &agent.FinishRequest{Status: agent.StatusDone, Aggregate: "conteo", Reason: "conteo"}
+	if h := g.ReviewFinish(s, f); !strings.Contains(h, "página 3") {
+		t.Fatalf("hint = %q", h)
+	}
+	if d := g.BeforeFinish(s, f); !d.Deny {
+		t.Fatal("aceptó un conteo parcial")
+	}
+	g.ObservePage(s, extract("conteo", "Número", nil), agent.Page{Columns: cols, Indicator: "Página 3 de 3", Rows: page(cols, []string{"F-3", "Vencida"}).Rows})
+	if d := g.BeforeFinish(s, f); d.Deny {
+		t.Fatalf("rechazó un conteo completo: %s", d.Reason)
+	}
+	// Sin indicador: una pagina repetida que todavia ofrece "siguiente" no cierra la lista.
+	g3 := New().(*Guard)
+	p2 := agent.Page{Columns: cols, NextVisible: true, NextEnabled: true, Rows: page(cols, []string{"F-2", "Vencida"}).Rows}
+	g3.ObservePage(s, extract("conteo", "Número", nil), p2)
+	g3.ObservePage(s, extract("conteo", "Número", nil), p2)
+	if d := g3.BeforeFinish(s, f); !d.Deny || !strings.Contains(d.Reason, "siguiente") {
+		t.Fatalf("aceptó un conteo con 'siguiente' habilitado: %+v", d)
+	}
+	// "Mostrando 1-20 de 45" no es un indicador de paginas.
+	g2 := New().(*Guard)
+	g2.ObservePage(s, extract("conteo", "Número", nil), agent.Page{Columns: cols, Indicator: "Mostrando 1-20 de 45"})
+	if why := g2.incomplete(); why != "" {
+		t.Fatalf("incompleto por un total de filas: %s", why)
+	}
+}
+
+// Una edicion no se verifica con el texto del modelo: hace falta una
+// relectura en codigo que compare al menos un valor pedido.
+func TestE7_4_S1_EditNeedsCodeReadBackNotEvidence(t *testing.T) {
+	// Solo evidencia (aunque coincida exacto) -> no terminada.
+	g := New().(*Guard)
+	s := editState()
+	g.BeforeAction(s, commit("CL-0007", "Guardar cliente"))
+	s.Phase = agent.PhaseVerify
+	if h := g.ReviewFinish(s, finishDone("Calle 80 # 24-15")); !strings.Contains(h, "extract") {
+		t.Fatalf("sin pista de relectura: %q", h)
+	}
+	if d := g.BeforeFinish(s, finishDone("la ficha muestra Calle 80 # 24-15")); !d.Deny {
+		t.Fatal("evidencia textual aceptada como verificación")
+	}
+	// Una lectura que no contiene ningun campo pedido (checked==0) + evidencia -> no terminada.
+	g.ObservePage(s, extract("datos", "Campo", nil), page([]string{"Campo", "Valor"}, []string{"Código", "CL-0007"}, []string{"Ciudad", "Bogotá"}))
+	if d := g.BeforeFinish(s, finishDone("Calle 80 # 24-15")); !d.Deny {
+		t.Fatal("lectura sin el campo pedido + evidencia aceptada")
+	}
+	// Con la relectura del campo: terminada.
+	g.ObservePage(s, extract("datos", "Campo", nil), page([]string{"Campo", "Valor"}, []string{"Dirección", "Calle 80 # 24-15"}))
+	if d := g.BeforeFinish(s, finishDone("")); d.Deny {
+		t.Fatalf("relectura correcta rechazada: %s", d.Reason)
+	}
+}
+
+func TestE7_4_S4_ExportEvidenceOnlyIsDenied(t *testing.T) {
+	s := st("Exporta el reporte de pedidos entregados en septiembre de 2026.", agent.IntentExport, "pedidos",
+		map[string]string{"estado": "Entregado", "periodo": "septiembre de 2026"})
+	g := New().(*Guard)
+	g.BeforeAction(s, commit("pedidos", "Exportar pedidos"))
+	s.Phase = agent.PhaseVerify
+	// Sin ninguna lectura posterior al exporte, la evidencia escrita del modelo no basta.
+	d := g.BeforeFinish(s, finishDone("Exporté el reporte de pedidos entregados de septiembre."))
+	if !d.Deny || !strings.Contains(d.Reason, "evidencia escrita no basta") {
+		t.Fatalf("decision = %+v", d)
+	}
+}

@@ -23,6 +23,9 @@ type Runner struct {
 	NewLLM func(m llm.Models) (llm.Chatter, error)
 	// NewGuard crea el guardrail de cada tarea (nil = DefaultGuard).
 	NewGuard func() Guard
+	// GuardFor crea el guardrail de cada tarea con su configuracion y los
+	// secretos de la tarea (epica 7). Tiene prioridad sobre NewGuard.
+	GuardFor func(cfg *config.Config, secrets []string) Guard
 	Now      func() time.Time
 }
 
@@ -71,7 +74,14 @@ func (r *Runner) Run(ctx context.Context, job *tasks.Job) tasks.Result {
 	meter := llm.NewMeter(chat, b.MaxCost)
 	exec := screen.NewExecutor(gatedDriver{d: ds.Driver(), gate: job.Input}, ds.Surface(), ds.Perception())
 	var guard Guard = DefaultGuard{}
-	if r.NewGuard != nil {
+	switch {
+	case r.GuardFor != nil:
+		secrets := make([]string, 0, len(job.Request.DesktopSecrets))
+		for _, x := range job.Request.DesktopSecrets {
+			secrets = append(secrets, x.Reveal())
+		}
+		guard = r.GuardFor(cfg, secrets)
+	case r.NewGuard != nil:
 		guard = r.NewGuard()
 	}
 	a := &Agent{
