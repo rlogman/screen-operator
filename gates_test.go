@@ -108,6 +108,13 @@ func TestE1_1_S2_MakeGateRunsFmtVetTest(t *testing.T) {
 			wantOut:  []string{"gofmt -l: ok", "go vet ./...", "go test ./...", "ok  \ttmpgate"},
 		},
 		{
+			// Los worktrees de los agentes viven en .claude/worktrees: fmt-check no los recorre.
+			name:     "ignora .claude",
+			files:    map[string]string{"lib.go": okLib, "lib_test.go": okTest, ".claude/worktrees/x/feo.go": "package x\nfunc  Feo( ) int {return 1}\n"},
+			wantZero: true,
+			wantOut:  []string{"gofmt -l: ok"},
+		},
+		{
 			name:    "gofmt lista un archivo",
 			files:   map[string]string{"lib.go": okLib, "lib_test.go": okTest, "feo.go": "package tmpgate\nfunc  Feo( ) int {return 1}\n"},
 			wantOut: []string{"feo.go"},

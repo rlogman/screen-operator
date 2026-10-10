@@ -94,3 +94,39 @@ func TestE1_3_S5_DisableAppProfilesEnv(t *testing.T) {
 		t.Fatalf("con %s=0 se esperaba sigecom, fue %q", EnvDisableAppProfiles, a.ID)
 	}
 }
+
+// Correccion del validador de la epica 1: el error de una URL mal formada no
+// repite usuario, clave, host, puerto ni query.
+func TestE1_3_S2_MalformedURLDoesNotLeak(t *testing.T) {
+	l := newTestLoader(t, nil)
+	cases := []string{
+		"wss://user:sekret@host.example:puerto/websockify?token=abc",
+		"wss://user:sekret@host.example/web%zzsockify?token=abc",
+		"wss://user:se/kret@host.example:x/websockify?token=abc",
+		"wss://user:sekret@host.example/\x7fwebsockify?token=abc",
+		"user:sekret@host.example:puerto/websockify?token=abc\x00",
+	}
+	for _, raw := range cases {
+		_, err := l.ResolveSurface(raw)
+		if err == nil {
+			t.Fatalf("%q: se esperaba error de URL invalida", raw)
+		}
+		if !errors.Is(err, ErrUnsupportedSurface) {
+			t.Fatalf("%q: se esperaba ErrUnsupportedSurface, fue %v", raw, err)
+		}
+		msg := err.Error()
+		for _, leak := range []string{"user", "sekret", "kret", "host.example", "token", "abc", "puerto"} {
+			if strings.Contains(msg, leak) {
+				t.Fatalf("%q: el error filtra %q: %s", raw, leak, msg)
+			}
+		}
+		if _, err := l.ForTask(raw, ""); err == nil || strings.Contains(err.Error(), "sekret") {
+			t.Fatalf("%q: ForTask filtra o no falla: %v", raw, err)
+		}
+	}
+	// Esquema y ruta se nombran cuando tienen forma segura.
+	_, err := l.ResolveSurface(cases[0])
+	if !strings.Contains(err.Error(), `esquema "wss"`) || !strings.Contains(err.Error(), `ruta "/websockify"`) {
+		t.Fatalf("el error debe nombrar esquema y ruta: %v", err)
+	}
+}
