@@ -1,0 +1,38 @@
+flowchart TB
+  eval["<b>Evaluador</b>"]
+  subgraph svc["Agent Service [Contenedor: Go]"]
+    direction TB
+    api["<b>HTTP API</b><br/>[net/http]<br/>Auth Bearer, /health, /tasks;<br/>responde en < 2 s"]
+    tm["<b>Task Manager</b><br/>[goroutines]<br/>Estado en memoria, 1 tarea por escritorio,<br/>deadline 270 s, cancelación dura"]
+    loop["<b>Agent Loop</b><br/>Clasificar intención → orientar →<br/>localizar → actuar → verificar → reportar"]
+    guard["<b>Guardrails</b><br/>Ambigüedad, acciones masivas o peligrosas,<br/>anti-duplicado, verificación final"]
+    llmc["<b>LLM Client</b><br/>[OpenRouter]<br/>Roles actor / verificador,<br/>conteo de tokens y costo"]
+    perc["<b>Perception</b><br/>Captura, detector de pantalla estable,<br/>zoom de región, extracción estructurada"]
+    act["<b>Action Executor</b><br/>click 150 ms, hover, select-all + type,<br/>teclas, scroll; espera a estabilizar"]
+    rfb["<b>RFB Driver</b><br/>[Go, detrás de interfaz Driver]<br/>WSS, auth VNC (DES), Raw/CopyRect,<br/>PointerEvent, KeyEvent"]
+    sum["<b>Summary Formatter</b><br/>Línea 'respuesta:', razones con IDs,<br/>redacción de secretos"]
+    conf["<b>Config Resolver</b><br/>Merge de capas, validación estricta,<br/>selección por URL y por pantalla"]
+    tr["<b>Trace Recorder</b>"]
+  end
+  desk["<b>Escritorio remoto</b><br/>[RFB/WSS]"]
+  llm["<b>OpenRouter</b>"]
+
+  eval --> api --> tm --> loop
+  loop --> guard
+  loop --> llmc --> llm
+  loop --> perc --> rfb
+  loop --> act --> rfb
+  rfb --> desk
+  loop --> sum --> tm
+  conf -.-> loop
+  conf -.-> act
+  conf -.-> sum
+  loop --> tr
+
+  classDef comp fill:#85bbf0,color:#000,stroke:#5d82a8
+  classDef ext fill:#999,color:#fff,stroke:#6b6b6b
+  classDef person fill:#08427b,color:#fff,stroke:#052e56
+  class api,tm,loop,guard,llmc,perc,act,rfb,sum,conf,tr comp
+  class desk,llm ext
+  class eval person
+  style svc fill:none,stroke:#2e6295,stroke-dasharray: 5 5

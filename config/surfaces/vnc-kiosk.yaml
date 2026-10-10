@@ -1,0 +1,33 @@
+# Superficie: navegador en kiosko operado por VNC (RFB sobre websocket).
+# Valores tomados de material/README.md, seccion "Lo que vimos operando el escritorio".
+surface:
+  id: vnc-kiosk
+  match:
+    url_schemes: [wss, ws]
+    url_path_suffix: /websockify
+  transport: rfb
+  rfb:
+    auth: vnc
+    shared: true
+    encodings: [raw, copyrect]
+  screen:
+    width: 1280
+    height: 800
+    trust_server_init: true
+  input:
+    click_hold_ms: 150
+    double_click_gap_ms: 120
+    key_hold_ms: 30
+    type_char_delay_ms: 15
+    replace_text:
+      strategy: select_all_then_type
+      chord: [ctrl, a]
+    scroll:
+      wheel_clicks_per_step: 3
+    hover_dwell_ms: 600
+  settle:
+    min_wait_ms: 400
+    max_wait_ms: 2500
+    poll_ms: 150
+    stable_frames: 2
+    diff_threshold: 0.002

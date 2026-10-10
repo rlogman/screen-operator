@@ -1,0 +1,33 @@
+flowchart TB
+  eval["<b>Evaluador</b><br/>[Persona / sistema]"]
+  team["<b>Equipo</b><br/>[Persona]"]
+  subgraph so["Screen Operator [Sistema]"]
+    direction TB
+    svc["<b>Agent Service</b><br/>[Contenedor: binario Go, Railway]<br/>API del contrato, runner de tareas,<br/>loop del agente, driver RFB"]
+    cfg["<b>Config bundle</b><br/>[Contenedor: YAML + JSON Schema]<br/>base · superficie · app · overlay"]
+    traces["<b>Trazas</b><br/>[Contenedor: JSONL + PNG en disco]<br/>Paso a paso: captura, acción, costo"]
+    harness["<b>Eval Harness</b><br/>[Contenedor: CLI Go]<br/>Corre casos, puntúa, reporta métricas"]
+    cases["<b>Corpus de casos</b><br/>[Contenedor: JSON, formato pruebas/]<br/>5 oficiales + propios por trampa"]
+  end
+  desk["<b>Escritorio remoto</b><br/>[Sistema externo: noVNC/RFB]"]
+  llm["<b>OpenRouter</b><br/>[Sistema externo]"]
+
+  eval -- "POST /tasks, GET /tasks/{id}<br/>[HTTPS + Bearer]" --> svc
+  svc -- "Lee y valida al arrancar<br/>y al recargar" --> cfg
+  svc -- "Escribe" --> traces
+  svc -- "RFB sobre WSS" --> desk
+  svc -- "HTTPS" --> llm
+  harness -- "POST /tasks, polling 5 s" --> svc
+  harness -- "/__reset, /__check" --> desk
+  harness -- "Lee" --> cases
+  harness -- "Lee costo y pasos" --> traces
+  team -- "Edita" --> cfg
+  team -- "Ejecuta" --> harness
+
+  classDef person fill:#08427b,color:#fff,stroke:#052e56
+  classDef cont fill:#438dd5,color:#fff,stroke:#2e6295
+  classDef ext fill:#999,color:#fff,stroke:#6b6b6b
+  class eval,team person
+  class svc,cfg,traces,harness,cases cont
+  class desk,llm ext
+  style so fill:none,stroke:#0b4884,stroke-dasharray: 5 5

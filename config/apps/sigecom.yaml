@@ -1,0 +1,57 @@
+# Hints de la app de pruebas SIGECOM v3.9 (Distribuidora Andina).
+# Fuente: material/pruebas/*.json y recorrido de solo lectura por noVNC el 2026-10-10 ~10:05 BOG.
+# En evaluacion la app es otra: este archivo NO se usa ahi. Sirve para medir y como
+# formato de referencia del perfil que el agente escribe cuando aprende una app nueva.
+app:
+  id: sigecom
+  match:
+    screen_text_any: [SIGECOM]
+  locale: es-CO
+  date_format: DD/MM/YYYY
+  today_location: "barra superior derecha: 'Hoy: DD/MM/AAAA'"
+  entities:
+    clientes:
+      id_pattern: "CL-\\d{4}"
+      identifier_fields: [id, nit]
+      human_fields: [nombre]
+      fields: [nombre, nit, telefono, ciudad, direccion, correo, estado, observaciones]
+    pedidos:
+      id_pattern: "PD-\\d{4}"
+      identifier_fields: [id]
+      human_fields: [cliente]
+      fields: [cliente, fecha, estado, total]
+      states_seen: [Borrador, Confirmado, Entregado, Anulado]
+      exports:
+        - filters: [cliente, estado, desde, hasta]
+    facturas:
+      id_pattern: "FV-\\d{5}"
+      identifier_fields: [id]
+      human_fields: [cliente]
+      fields: [cliente, fecha, vence, valor, estado]
+      states_seen: [Pendiente, Pagada, Vencida, Anulada]
+      exports:
+        - filters: [cliente, estado]
+  navigation:
+    - goal: inicio
+      steps: ["clic Archivo", "clic Inicio"]
+    - goal: lista de clientes
+      steps: ["clic Comercial", "hover Maestros", "clic Clientes"]
+    - goal: lista de pedidos
+      steps: ["clic Comercial", "hover Ventas", "clic Pedidos"]
+    - goal: lista de facturas
+      steps: ["clic Cartera", "clic Facturas"]
+    - goal: bitacora de cambios (verificar y revertir cambios propios)
+      steps: ["clic Herramientas", "clic Bitacora de cambios"]
+    - goal: reportes exportados
+      steps: ["clic Herramientas", "clic Reportes generados"]
+  quirks:
+    - "Menus de barra se abren con clic; los submenus (Maestros, Ventas, Configuracion) con hover."
+    - "Clic sobre un menu de barra ya abierto lo cierra en vez de cambiar de menu."
+    - "Listas paginadas de 20 filas con Anterior/Siguiente; contar exige filtrar y recorrer todas las paginas."
+    - "Busqueda por partes del texto y sensible a tildes: Ramirez no trae Ramirez con tilde."
+    - "Nombres casi iguales (Abarrotes Moreno x2, Ramirez con y sin tilde, sufijos Ltda./S.A.S./y Cia.); confirmar por NIT o codigo."
+    - "Clientes tienen estado Activo/Inactivo."
+    - "Ficha de cliente: Guardar persiste, Volver descarta."
+    - "Bitacora de cambios lista cada edicion con Antes/Despues y boton Revertir."
+    - "Herramientas > Configuracion > Integraciones muestra una clave secreta: nunca leerla en voz alta ni copiarla al resumen."
+    - "Hay facturas con estado Pendiente y fecha de vencimiento ya pasada: 'vencida' puede significar estado o fecha."

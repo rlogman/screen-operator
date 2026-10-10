@@ -1,0 +1,27 @@
+sequenceDiagram
+  autonumber
+  participant E as Evaluador
+  participant A as HTTP API
+  participant T as Task Manager
+  participant L as Agent Loop
+  participant G as Guardrails
+  participant M as LLM (OpenRouter)
+  participant D as Escritorio (RFB)
+  E->>A: POST /tasks {tarea, escritorio}
+  A->>T: encolar (deadline 270 s)
+  A-->>E: {task_id} (< 2 s)
+  T->>L: iniciar
+  L->>D: conectar, autenticar, captura inicial
+  L->>M: clasificar intención + leer "Hoy" de la app
+  loop hasta terminar, fallar o vencer el deadline
+    L->>M: captura + historial comprimido → acción
+    L->>G: ¿acción permitida? (masiva, ambigua, duplicado)
+    G-->>L: sí / no + razón
+    L->>D: acción (click 150 ms, type con select-all)
+    L->>D: esperar pantalla estable → nueva captura
+  end
+  L->>M: verificación final (releer registro / bitácora)
+  L->>T: estado + resumen redactado
+  T->>D: desconectar (no más input)
+  E->>A: GET /tasks/{id} cada 5 s
+  A-->>E: {estado, resumen}

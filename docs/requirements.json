@@ -1,0 +1,744 @@
+{
+  "project": "screen-operator",
+  "conventions": [
+    "Cada criterio termina con un tag [E<épica>.<story>-S<n>]. El test Go que lo cubre se llama Test<E>_<story>_S<n>_<Descripcion> (ej. TestE2_2_S1_HandshakeOK). La suite de una épica se corre con: go test ./... -run '^TestE<n>_'.",
+    "Tests que requieren el escritorio real llevan build tag 'desktop' y leen SO_DESKTOP_URL, SO_DESKTOP_PASSWORD, SO_DESKTOP_TOKEN desde el entorno. Tests que llaman a OpenRouter de verdad llevan build tag 'live' y leen OPENROUTER_API_KEY.",
+    "Las pruebas se ejecutan por épica (gate de épica), no por ticket. Por ticket solo se exige compilar: go build ./... && go vet ./...",
+    "Fuente de diseño: https://claude.ai/artifact/XzG4LXQzwR273Y6dbywrGL (copia en docs/design/web/template.html). Contrato y reglas: material/README.md. Pruebas oficiales: material/pruebas/*.json."
+  ],
+  "epics": [
+    {
+      "id": "1",
+      "title": "Fundaciones y configuración",
+      "description": "Módulo Go, estructura de paquetes, gates locales y carga de configuración declarativa por capas (base, superficie, app, overlay) validada contra config/schema.json.",
+      "user_stories": [
+        {
+          "id": "1.1",
+          "title": "Scaffold del módulo Go y gates locales",
+          "description": "Crear el módulo Go con la estructura de paquetes del diseño y un Makefile con los gates que usan todos los loops.",
+          "complexity": "Low",
+          "implementation_order": 1,
+          "acceptance_criteria": [
+            "Given el repositorio sin código Go When se ejecuta 'make build' Then se compilan los binarios cmd/agent, cmd/harness y cmd/rfbprobe sin errores y quedan en ./bin [E1.1-S1]",
+            "Given el código del repositorio When se ejecuta 'make gate' Then corre gofmt -l (sin archivos listados), go vet ./... y go test ./... y el comando sale con código 0 solo si los tres pasan [E1.1-S2]",
+            "Given el repositorio When se ejecuta 'make test-epic E=3' Then corre exactamente go test ./... -run '^TestE3_' con -count=1 y sale con el código de go test [E1.1-S3]",
+            "Given el archivo .gitignore When se lista lo ignorado Then incluye bin/, .env, .artifex/*.db, traces/ y runs/ y no ignora config/ ni docs/ [E1.1-S4]"
+          ],
+          "technical_notes": [
+            "Módulo: 'screenoperator'. Go según go.mod de la máquina (go 1.27.1 instalado). Paquetes: internal/config, internal/rfb, internal/screen, internal/api, internal/tasks, internal/agent, internal/llm, internal/guard, internal/summary, internal/harness, internal/trace, internal/fakes.",
+            "Stack: Go. Dependencias externas mínimas; cada una se justifica en DECISIONS. Permitidas: un paquete websocket y un parser YAML.",
+            "Validate L1: go build ./... && go vet ./..."
+          ]
+        },
+        {
+          "id": "1.2",
+          "title": "Carga, merge y validación estricta de configuración",
+          "description": "Leer base.yaml, la superficie y el perfil de app, fusionar por capas y validar contra config/schema.json. Una clave desconocida o un valor fuera de rango es error al arrancar.",
+          "complexity": "Medium",
+          "implementation_order": 2,
+          "acceptance_criteria": [
+            "Given config/base.yaml, config/surfaces/vnc-kiosk.yaml y config/apps/sigecom.yaml When se cargan en ese orden Then la configuración resultante tiene surface.input.click_hold_ms=150, budgets.task_deadline_s=300 y app.id='sigecom' [E1.2-S1]",
+            "Given una capa con mapas anidados y una lista When se fusiona sobre la base Then los mapas se fusionan en profundidad y la lista de la capa reemplaza por completo a la de la base [E1.2-S2]",
+            "Given una capa con la clave desconocida surface.input.clik_hold_ms When se carga la configuración Then la carga falla con un error que nombra la ruta 'surface.input.clik_hold_ms' [E1.2-S3]",
+            "Given una capa con models.roles.actor.temperature=3 When se carga la configuración Then la carga falla con un error de validación que nombra esa ruta [E1.2-S4]",
+            "Given la variable SO_CONFIG_OVERLAY apuntando a un YAML con models.roles.actor.model='x/y' When se carga la configuración Then el actor resultante es 'x/y' y el resto de valores no cambia [E1.2-S5]",
+            "Given la variable SO_CONFIG_OVERLAY apuntando a un archivo inexistente When arranca el agente Then el proceso termina con código distinto de 0 y un mensaje que nombra la ruta [E1.2-S6]"
+          ],
+          "technical_notes": [
+            "Validación: implementar contra config/schema.json (JSON Schema 2020-12) con una librería de validación o con structs Go de decodificación estricta (KnownFields) más reglas de rango equivalentes al schema. Registrar la elección en DECISIONS.",
+            "scripts/validate_config.py debe seguir pasando con los mismos archivos.",
+            "Validate L1: go build ./... && go vet ./..."
+          ]
+        },
+        {
+          "id": "1.3",
+          "title": "Selección de superficie y de perfil de app",
+          "description": "Elegir la superficie por la URL del escritorio y el perfil de app por texto visible en la primera captura. Sin coincidencia, perfil vacío.",
+          "complexity": "Low",
+          "implementation_order": 3,
+          "acceptance_criteria": [
+            "Given la URL 'wss://host.example/websockify' When se resuelve la superficie Then se elige 'vnc-kiosk' [E1.3-S1]",
+            "Given la URL 'https://host.example/' When se resuelve la superficie Then se devuelve un error 'superficie no soportada' que nombra el esquema y la ruta [E1.3-S2]",
+            "Given el texto de pantalla 'SIGECOM · Distribuidora Andina v3.9' When se resuelve el perfil de app Then se elige 'sigecom' [E1.3-S3]",
+            "Given el texto de pantalla 'Sistema Farmacia XYZ' When se resuelve el perfil de app Then el perfil es vacío y la configuración no contiene la clave app.id [E1.3-S4]",
+            "Given la variable SO_DISABLE_APP_PROFILES=1 y el texto 'SIGECOM' When se resuelve el perfil de app Then el perfil es vacío [E1.3-S5]"
+          ],
+          "technical_notes": [
+            "SO_DISABLE_APP_PROFILES existe para que el harness mida el modo 'app no vista' (métrica principal del diseño).",
+            "Validate L1: go build ./... && go vet ./..."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "2",
+      "title": "Driver RFB y primitivas de pantalla",
+      "description": "Cliente RFB sobre websocket detrás de una interfaz Driver, con un servidor RFB falso para tests, captura de framebuffer, eventos de puntero y teclado, detector de pantalla estable y primitivas que resuelven las trampas del README (repintado de 1 s, clic menor a 100 ms ignorado, escritura que concatena).",
+      "user_stories": [
+        {
+          "id": "2.1",
+          "title": "Servidor RFB falso para tests",
+          "description": "Test double en internal/fakes que habla RFB 3.8 sobre websocket, con auth VNC, un framebuffer programable y registro de eventos recibidos.",
+          "complexity": "Medium",
+          "implementation_order": 4,
+          "acceptance_criteria": [
+            "Given un servidor falso con contraseña 'secreta1' y framebuffer de 1280x800 When un cliente websocket completa el handshake y la auth VNC con 'secreta1' Then el servidor envía ServerInit con ancho 1280 y alto 800 [E2.1-S1]",
+            "Given un servidor falso con contraseña 'secreta1' When un cliente se autentica con 'otra' Then el servidor responde SecurityResult distinto de 0 con una razón y cierra la conexión [E2.1-S2]",
+            "Given un servidor falso conectado When el cliente envía PointerEvent y KeyEvent Then el servidor registra cada evento con su timestamp, posición, máscara de botones o keysym y estado down/up [E2.1-S3]",
+            "Given un servidor falso con un repintado programado con retraso de 800 ms tras un clic When el cliente hace clic Then las actualizaciones pedidas antes de 800 ms devuelven el framebuffer anterior y las posteriores el nuevo [E2.1-S4]",
+            "Given un servidor falso configurado para ignorar clics con menos de 100 ms entre down y up When recibe un clic de 50 ms Then no aplica el efecto del clic [E2.1-S5]"
+          ],
+          "technical_notes": [
+            "El servidor falso emula las tres trampas del README para que la épica 2 se pruebe sin el escritorio real.",
+            "Validate L1: go build ./... && go vet ./..."
+          ]
+        },
+        {
+          "id": "2.2",
+          "title": "Cliente RFB: conexión, handshake y autenticación",
+          "description": "Conectar por WSS/WS a /websockify, negociar la versión, autenticar con VNC Authentication (DES con bits de la clave invertidos por byte), recibir ServerInit y fijar formato de píxel y encodings.",
+          "complexity": "High",
+          "implementation_order": 5,
+          "acceptance_criteria": [
+            "Given el servidor falso con contraseña 'secreta1' When el cliente se conecta con 'secreta1' Then Connect devuelve una sesión con ancho 1280, alto 800 y nombre de escritorio no vacío [E2.2-S1]",
+            "Given el servidor falso con contraseña 'secreta1' When el cliente se conecta con 'otra' Then Connect devuelve un error de autenticación que no contiene la contraseña [E2.2-S2]",
+            "Given un servidor que no responde When el cliente intenta conectar con timeout de 5 s Then Connect devuelve un error de timeout en no más de 6 s [E2.2-S3]",
+            "Given una sesión abierta When se cierra Then la conexión websocket se cierra y los envíos posteriores devuelven error [E2.2-S4]",
+            "Given el escritorio real en SO_DESKTOP_URL con SO_DESKTOP_PASSWORD When el cliente se conecta (build tag desktop) Then obtiene ancho 1280 y alto 800 [E2.2-S5]"
+          ],
+          "technical_notes": [
+            "Interfaz Driver en internal/rfb (o internal/screen) para que otro transporte no toque el resto del código.",
+            "Se permite un cliente VNC de terceros si cubre WSS y auth VNC; si no, implementación propia del subconjunto mínimo. Registrar la decisión.",
+            "La contraseña nunca se registra en logs ni errores.",
+            "Validate L1: go build ./... && go vet ./..."
+          ]
+        },
+        {
+          "id": "2.3",
+          "title": "Framebuffer y capturas",
+          "description": "Pedir actualizaciones, decodificar Raw y CopyRect, mantener una imagen RGBA del framebuffer y producir capturas JPEG/PNG y recortes ampliados.",
+          "complexity": "High",
+          "implementation_order": 6,
+          "acceptance_criteria": [
+            "Given el servidor falso con un framebuffer que tiene un rectángulo rojo en (100,100,50,50) When el cliente pide una captura Then el píxel (120,120) de la imagen es rojo y el (10,10) conserva el fondo [E2.3-S1]",
+            "Given el servidor falso que envía un CopyRect de (0,0,100,100) a (200,200) When el cliente aplica la actualización Then los píxeles de (200,200,100,100) son iguales a los de (0,0,100,100) [E2.3-S2]",
+            "Given una captura de 1280x800 When se codifica como JPEG con calidad 80 Then se obtiene una imagen JPEG válida de 1280x800 [E2.3-S3]",
+            "Given una captura y la región (100,100,200,100) con factor 2 When se pide un zoom Then se obtiene una imagen de 400x200 del contenido de esa región [E2.3-S4]",
+            "Given perception.screenshot.max_width=640 When se produce la captura para el modelo Then la imagen mide 640x400 y la función de escala convierte (320,200) de la imagen a (640,400) de pantalla [E2.3-S5]"
+          ],
+          "technical_notes": [
+            "Encodings: Raw obligatorio, CopyRect deseable. Pedir solo los que se implementan.",
+            "Validate L1: go build ./... && go vet ./..."
+          ]
+        },
+        {
+          "id": "2.4",
+          "title": "Entrada: puntero y teclado",
+          "description": "Eventos de puntero (mover, clic con duración, doble clic, rueda) y de teclado (ASCII, letras con tilde y ñ, teclas especiales y combinaciones).",
+          "complexity": "Medium",
+          "implementation_order": 7,
+          "acceptance_criteria": [
+            "Given surface.input.click_hold_ms=150 When se hace clic en (500,300) Then el servidor falso registra un movimiento a (500,300), un down del botón 1 y un up con al menos 150 ms entre down y up [E2.4-S1]",
+            "Given un doble clic en (500,300) When se envía Then el servidor registra dos pares down/up separados por double_click_gap_ms [E2.4-S2]",
+            "Given el texto 'Calle 80 # 24-15 Peñalosa Ávila' When se escribe Then el servidor recibe los keysyms correctos para cada carácter, incluidos ñ y Á, en orden y con down/up por tecla [E2.4-S3]",
+            "Given la combinación ctrl+a When se envía Then el servidor registra Control down, a down, a up, Control up en ese orden [E2.4-S4]",
+            "Given un scroll hacia abajo de 3 pasos en (640,400) When se envía Then el servidor registra 3 pares down/up del botón 5 en esa posición [E2.4-S5]",
+            "Given las teclas Enter, Tab, Escape, Backspace, Delete, flechas, Home y End When se envían Then cada una produce su keysym X11 [E2.4-S6]"
+          ],
+          "technical_notes": [
+            "Keysyms Latin-1 para áéíóúñÁÉÍÓÚÑ ü.",
+            "Validate L1: go build ./... && go vet ./..."
+          ]
+        },
+        {
+          "id": "2.5",
+          "title": "Detector de pantalla estable",
+          "description": "Esperar después de una acción hasta que el framebuffer no cambie durante stable_frames lecturas consecutivas, con espera mínima y máxima configurables.",
+          "complexity": "Medium",
+          "implementation_order": 8,
+          "acceptance_criteria": [
+            "Given el servidor falso que repinta 800 ms después de un clic When se hace clic y se espera estabilidad Then la captura devuelta tiene el contenido nuevo [E2.5-S1]",
+            "Given una pantalla que no cambia When se espera estabilidad con min_wait_ms=400 Then la espera dura al menos 400 ms y como máximo 400 ms más 2 poll_ms [E2.5-S2]",
+            "Given una pantalla que cambia continuamente When se espera estabilidad con max_wait_ms=2500 Then la espera termina entre 2500 y 2700 ms y el resultado indica 'no estable' [E2.5-S3]",
+            "Given diff_threshold=0.002 y un cambio de un solo píxel (el cursor) When se compara Then la pantalla se considera estable [E2.5-S4]"
+          ],
+          "technical_notes": [
+            "Validate L1: go build ./... && go vet ./..."
+          ]
+        },
+        {
+          "id": "2.6",
+          "title": "Executor de primitivas con configuración de superficie",
+          "description": "API de alto nivel que usa el agente: Click, DoubleClick, Hover, TypeReplace, Key, Scroll, Zoom, Screenshot. Cada acción espera estabilidad y devuelve la captura nueva.",
+          "complexity": "Medium",
+          "implementation_order": 9,
+          "acceptance_criteria": [
+            "Given un campo con el texto 'viejo' en el servidor falso When se llama TypeReplace con 'nuevo' Then el servidor registra ctrl+a antes de las teclas de 'nuevo' y el campo queda con 'nuevo' [E2.6-S1]",
+            "Given surface.input.replace_text.strategy='triple_click_then_type' When se llama TypeReplace Then se envía un triple clic en lugar de ctrl+a [E2.6-S2]",
+            "Given hover_dwell_ms=600 When se llama Hover en (270,182) Then el puntero se mueve sin botones y la llamada no retorna antes de 600 ms [E2.6-S3]",
+            "Given cualquier primitiva que modifica la pantalla When termina Then devuelve una captura posterior a la espera de estabilidad y la duración total de la acción [E2.6-S4]",
+            "Given el escritorio real (build tag desktop) When se hace clic en el menú 'Cartera' y luego en 'Facturas' Then la captura final contiene una tabla con encabezado 'Código' (verificado por comparación de píxeles con una captura de referencia guardada en testdata o por inspección del test) [E2.6-S5]"
+          ],
+          "technical_notes": [
+            "Coordenadas siempre en espacio de pantalla (1280x800); la conversión desde la imagen escalada vive aquí.",
+            "Validate L1: go build ./... && go vet ./..."
+          ]
+        },
+        {
+          "id": "2.7",
+          "title": "CLI rfbprobe para operar el escritorio a mano",
+          "description": "Herramienta para conectarse al escritorio real, guardar capturas y ejecutar primitivas desde la terminal. Sirve para depurar y para relevar datos del corpus.",
+          "complexity": "Low",
+          "implementation_order": 10,
+          "acceptance_criteria": [
+            "Given SO_DESKTOP_URL y SO_DESKTOP_PASSWORD válidos When se ejecuta 'rfbprobe shot out.png' Then se guarda una captura PNG de 1280x800 [E2.7-S1]",
+            "Given una sesión When se ejecuta 'rfbprobe click 268 160 shot out.png' Then se hace el clic, se espera estabilidad y se guarda la captura posterior [E2.7-S2]",
+            "Given cualquier comando de rfbprobe When falla la conexión Then el mensaje de error no contiene la contraseña [E2.7-S3]",
+            "Given SO_DESKTOP_TOKEN When se ejecuta 'rfbprobe reset' Then se llama POST /__reset con Authorization Bearer y se imprime el código HTTP [E2.7-S4]"
+          ],
+          "technical_notes": [
+            "Comandos encadenables: shot, click x y, dclick x y, hover x y, type 'texto', key combo, scroll x y dir n, zoom x y w h, reset, check archivo.json.",
+            "Validate L1: go build ./... && go vet ./..."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "3",
+      "title": "API del contrato y gestión de tareas",
+      "description": "Servidor HTTP con el contrato exacto del README: auth Bearer, GET /health, POST /tasks en menos de 2 s, GET /tasks/{id}; Task Manager con un worker por escritorio, deadline interno y corte duro de input al reportar.",
+      "user_stories": [
+        {
+          "id": "3.1",
+          "title": "Servidor HTTP, autenticación y /health",
+          "description": "Servidor net/http con middleware Bearer contra TEAM_TOKEN y endpoint de salud.",
+          "complexity": "Low",
+          "implementation_order": 11,
+          "acceptance_criteria": [
+            "Given TEAM_TOKEN='t0k' When se pide GET /health con 'Authorization: Bearer t0k' Then responde 200 [E3.1-S1]",
+            "Given TEAM_TOKEN='t0k' When se pide GET /tasks/abc sin header Authorization o con otro token Then responde 401 y el cuerpo no revela el token esperado [E3.1-S2]",
+            "Given TEAM_TOKEN sin definir When arranca el agente Then el proceso termina con código distinto de 0 y un mensaje que nombra la variable [E3.1-S3]",
+            "Given la variable PORT=8080 When arranca el agente Then escucha en :8080; sin PORT escucha en :8080 por defecto [E3.1-S4]"
+          ],
+          "technical_notes": [
+            "Comparación de token en tiempo constante.",
+            "Decisión a registrar: si GET /health sin token responde 200 o 401. El README dice que todas las llamadas llevan el token; responder 200 sin token no rompe el contrato y ayuda a healthchecks de la plataforma.",
+            "Validate L1: go build ./... && go vet ./..."
+          ]
+        },
+        {
+          "id": "3.2",
+          "title": "POST /tasks",
+          "description": "Valida el cuerpo, crea la tarea en estado en_curso, la encola al worker del escritorio y responde {task_id} en menos de 2 s.",
+          "complexity": "Medium",
+          "implementation_order": 12,
+          "acceptance_criteria": [
+            "Given un cuerpo con tarea, escritorio.url y escritorio.password When se hace POST /tasks Then responde 200 con un JSON {\"task_id\": \"...\"} no vacío en menos de 300 ms aunque el agente tarde minutos [E3.2-S1]",
+            "Given un cuerpo sin 'tarea' o con escritorio.url vacío When se hace POST /tasks Then responde 400 con un mensaje que nombra el campo faltante [E3.2-S2]",
+            "Given un cuerpo con JSON inválido When se hace POST /tasks Then responde 400 [E3.2-S3]",
+            "Given dos POST /tasks seguidos con el mismo cuerpo When se reciben Then cada uno devuelve un task_id distinto [E3.2-S4]"
+          ],
+          "technical_notes": [
+            "Los nombres de campos salen de contract.request en la configuración.",
+            "Validate L1: go build ./... && go vet ./..."
+          ]
+        },
+        {
+          "id": "3.3",
+          "title": "GET /tasks/{task_id}",
+          "description": "Devuelve {estado, resumen} con los valores en_curso, terminada o fallida.",
+          "complexity": "Low",
+          "implementation_order": 13,
+          "acceptance_criteria": [
+            "Given una tarea recién creada When se consulta Then responde 200 con estado 'en_curso' y un resumen string (puede ser vacío) [E3.3-S1]",
+            "Given una tarea terminada con resumen 'respuesta: 45' When se consulta Then responde estado 'terminada' y resumen 'respuesta: 45' [E3.3-S2]",
+            "Given un task_id inexistente When se consulta Then responde 404 [E3.3-S3]",
+            "Given cualquier respuesta de GET /tasks/{id} When se serializa Then contiene exactamente las claves 'estado' y 'resumen' [E3.3-S4]"
+          ],
+          "technical_notes": [
+            "Validate L1: go build ./... && go vet ./..."
+          ]
+        },
+        {
+          "id": "3.4",
+          "title": "Task Manager: worker por escritorio, deadline y corte duro",
+          "description": "Ejecuta una tarea por escritorio a la vez, aplica el deadline interno (task_deadline_s - safety_margin_s), cancela todo input al reportar y resuelve tareas concurrentes sobre el mismo escritorio.",
+          "complexity": "High",
+          "implementation_order": 14,
+          "acceptance_criteria": [
+            "Given un agente falso que nunca termina y budgets 300 s con margen 30 s (en el test escalados a 3 s y 0,3 s) When pasa el deadline Then la tarea queda 'fallida' con un resumen que dice que se agotó el tiempo y el driver no recibe más eventos después de ese momento [E3.4-S1]",
+            "Given una tarea que reporta 'terminada' When el agente intenta enviar otro evento de entrada después de reportar Then el evento se rechaza y no llega al servidor falso [E3.4-S2]",
+            "Given una tarea en curso sobre el escritorio A When llega una nueva tarea para el mismo escritorio A Then la tarea anterior se cancela, queda 'fallida' con el motivo 'reemplazada por una tarea nueva', su sesión se cierra antes de que la nueva conecte, y la nueva arranca [E3.4-S3]",
+            "Given tareas en curso sobre los escritorios A y B When corren a la vez Then avanzan en paralelo sin bloquearse entre sí [E3.4-S4]",
+            "Given un panic dentro del agente When ocurre durante una tarea Then la tarea queda 'fallida' con un resumen genérico, el proceso sigue vivo y /health sigue respondiendo 200 [E3.4-S5]"
+          ],
+          "technical_notes": [
+            "context.Context con deadline propagado hasta el driver; el driver rechaza envíos con el contexto cancelado.",
+            "Estado en memoria. Sin persistencia.",
+            "Validate L1: go build ./... && go vet ./..."
+          ]
+        },
+        {
+          "id": "3.5",
+          "title": "Logs estructurados sin secretos",
+          "description": "Logs JSON por tarea (task_id, fase, paso, acción, duración, costo) que nunca incluyen la contraseña del escritorio ni tokens.",
+          "complexity": "Low",
+          "implementation_order": 15,
+          "acceptance_criteria": [
+            "Given una tarea con escritorio.password='P4ss-xyz' When se ejecuta de punta a punta con el agente falso Then ninguna línea de log contiene 'P4ss-xyz', TEAM_TOKEN ni OPENROUTER_API_KEY [E3.5-S1]",
+            "Given una tarea When se registra cada paso Then cada línea de log es JSON válido con task_id, fase y timestamp [E3.5-S2]"
+          ],
+          "technical_notes": [
+            "log/slog con handler JSON.",
+            "Validate L1: go build ./... && go vet ./..."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "4",
+      "title": "Despliegue temprano",
+      "description": "Imagen de contenedor y despliegue del servicio con el contrato (aunque el agente todavía sea mínimo), para validar el entrypoint temprano con el validador del evento.",
+      "user_stories": [
+        {
+          "id": "4.1",
+          "title": "Imagen de contenedor",
+          "description": "Dockerfile multi-stage con binario estático y configuración embebida o copiada.",
+          "complexity": "Low",
+          "implementation_order": 16,
+          "acceptance_criteria": [
+            "Given el repositorio When se ejecuta 'docker build -t screen-operator .' Then la imagen se construye y la etapa final no contiene toolchain de Go [E4.1-S1]",
+            "Given la imagen y TEAM_TOKEN='t0k' When se ejecuta el contenedor con PORT=8080 Then GET /health con el token responde 200 [E4.1-S2]",
+            "Given la imagen When se ejecuta sin TEAM_TOKEN Then el contenedor termina con código distinto de 0 [E4.1-S3]"
+          ],
+          "technical_notes": [
+            "Si docker no está disponible en la máquina, el criterio se demuestra con el build reproducible y queda anotado como readiness.",
+            "Validate L1: go build ./... && go vet ./..."
+          ]
+        },
+        {
+          "id": "4.2",
+          "title": "Runbook y configuración de despliegue en Railway",
+          "description": "Archivos y runbook para desplegar en Railway con las variables necesarias y healthcheck.",
+          "complexity": "Low",
+          "implementation_order": 17,
+          "acceptance_criteria": [
+            "Given docs/deploy.md When un integrante lo sigue Then encuentra los pasos para crear el servicio, las variables TEAM_TOKEN, OPENROUTER_API_KEY y SO_CONFIG_OVERLAY opcional, el healthcheck en /health y cómo ver logs [E4.2-S1]",
+            "Given el archivo de configuración de Railway del repositorio When se valida Then declara el Dockerfile como builder y /health como healthcheck [E4.2-S2]",
+            "Given el despliegue hecho por un integrante When se ejecuta scripts/check_entrypoint.sh con la URL pública y el token Then verifica /health 200, POST /tasks devuelve task_id en menos de 2 s y GET /tasks/{id} devuelve estado y resumen [E4.2-S3]"
+          ],
+          "technical_notes": [
+            "El despliegue real usa la cuenta del equipo: el loop deja readiness (runbook, script de verificación). Ejecutarlo requiere el OK explícito del usuario.",
+            "No inventar flags de Railway: verificar la sintaxis del archivo de configuración en su documentación.",
+            "Validate L1: go build ./... && go vet ./..."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "5",
+      "title": "Harness de evaluación y corpus",
+      "description": "Herramienta que corre casos contra el agente desplegado o local usando /__reset y /__check, puntúa localmente lo que /__check no mira y reporta las métricas del diseño. Corpus propio por trampa.",
+      "user_stories": [
+        {
+          "id": "5.1",
+          "title": "Runner de casos",
+          "description": "Por caso: POST /__reset, POST /tasks, polling cada 5 s hasta estado final o 300 s, POST /__check, y registro del resultado en JSONL.",
+          "complexity": "Medium",
+          "implementation_order": 18,
+          "acceptance_criteria": [
+            "Given un caso de material/pruebas y un agente falso que responde 'terminada' a los 6 s When el harness corre el caso Then llama /__reset, luego POST /tasks, consulta GET cada 5 s, llama /__check con el JSON del caso y escribe una línea JSONL con id, estado, resumen, duración y resultado de check [E5.1-S1]",
+            "Given un agente que nunca termina When pasan 300 s (escalados en el test) Then el harness deja de consultar, registra 'timeout' y pasa al caso siguiente [E5.1-S2]",
+            "Given la opción --runs=3 When se corre un caso Then se ejecuta 3 veces con reset previo en cada una y se registran 3 líneas [E5.1-S3]",
+            "Given la opción --cases 'material/pruebas/E1*.json,cases/*.json' When se corre Then se ejecutan todos los archivos que coinciden, en orden alfabético [E5.1-S4]",
+            "Given un escritorio y un agente reales (build tag desktop) When se corre E3 Then el JSONL contiene el resultado de /__check devuelto por el escritorio [E5.1-S5]"
+          ],
+          "technical_notes": [
+            "Servidores HTTP falsos con httptest para /__reset, /__check y el agente.",
+            "Validate L1: go build ./... && go vet ./..."
+          ]
+        },
+        {
+          "id": "5.2",
+          "title": "Puntuación local",
+          "description": "Combina /__check con las reglas que el README evalúa aparte: estado esperado, línea respuesta, claves_razon y secretos.",
+          "complexity": "Medium",
+          "implementation_order": 19,
+          "acceptance_criteria": [
+            "Given respuesta_esperada '45' y resumen 'Busqué...\\nrespuesta: 45 facturas' When se puntúa Then la respuesta es correcta porque el primer número de la línea es 45 [E5.2-S1]",
+            "Given respuesta_esperada '45' y resumen 'respuesta: unas 44 o 45' When se puntúa Then la respuesta es incorrecta [E5.2-S2]",
+            "Given una pregunta de dos datos 'A; B' y resumen 'respuesta: A; B' When se puntúa Then es correcta; con 'respuesta: B; A' es incorrecta [E5.2-S3]",
+            "Given estado_esperado 'fallida' con claves_razon ['52345678','1019876543'] y un resumen que nombra solo '52345678' When se puntúa Then el caso es incorrecto por clave faltante [E5.2-S4]",
+            "Given estado_esperado 'terminada' y estado reportado 'terminada' con /__check pass=false When se puntúa Then el caso es incorrecto y se marca como falso éxito [E5.2-S5]",
+            "Given un resumen que contiene la contraseña del escritorio usada en la corrida When se puntúa Then el caso es incorrecto y se marca 'secreto filtrado' [E5.2-S6]",
+            "Given una pregunta que no se puede responder (estado_esperado 'fallida', sin respuesta_esperada) y un resumen con una línea 'respuesta:' When se puntúa Then el caso es incorrecto [E5.2-S7]"
+          ],
+          "technical_notes": [
+            "Reglas tomadas literalmente de material/README.md sección 'Cómo se evalúa'.",
+            "Validate L1: go build ./... && go vet ./..."
+          ]
+        },
+        {
+          "id": "5.3",
+          "title": "Reporte de métricas",
+          "description": "Agrega los JSONL de una o más corridas en las métricas y metas del diseño, por categoría y en total.",
+          "complexity": "Low",
+          "implementation_order": 20,
+          "acceptance_criteria": [
+            "Given resultados de 10 casos con 8 correctos When se genera el reporte Then muestra acierto 80 %, falsos éxitos, acciones fuera de la tarea, duplicados, secretos filtrados, tiempo p50 y p95, costo medio y pasos medios [E5.3-S1]",
+            "Given casos con campo 'categoria' When se genera el reporte Then muestra las mismas métricas por categoría [E5.3-S2]",
+            "Given metas configuradas (oficiales 5/5 en 3 corridas, propios >= 90 %, falsos éxitos 0, secretos 0, p95 < 240 s, costo medio <= 0,04) When se genera el reporte Then cada meta aparece como CUMPLE o NO CUMPLE y el comando sale con código 0 solo si todas cumplen [E5.3-S3]",
+            "Given el reporte When se escribe Then se generan runs/<fecha-hora>/report.md y report.json [E5.3-S4]"
+          ],
+          "technical_notes": [
+            "Costo y pasos por tarea: el agente los expone en un endpoint de diagnóstico autenticado o en el JSONL de trazas; decidir y registrar. No agregar campos a GET /tasks/{id} (el contrato tiene exactamente estado y resumen).",
+            "Validate L1: go build ./... && go vet ./..."
+          ]
+        },
+        {
+          "id": "5.4",
+          "title": "Verificar si /__check acepta pruebas propias",
+          "description": "Probar el supuesto del diseño y dejar documentado el resultado y la alternativa.",
+          "complexity": "Low",
+          "implementation_order": 21,
+          "acceptance_criteria": [
+            "Given el escritorio real y una prueba propia con un diff_esperado que el estado inicial no cumple When se envía a /__check tras un reset Then se registra en docs/assumptions.md si responde 200 con checks y pass=false, o el error que devuelve [E5.4-S1]",
+            "Given que /__check no acepta pruebas propias When se puntúan los casos propios Then el harness usa solo las reglas locales y el reporte marca esos casos como 'sin check de estado' [E5.4-S2]"
+          ],
+          "technical_notes": [
+            "Validate L1: go build ./... && go vet ./..."
+          ]
+        },
+        {
+          "id": "5.5",
+          "title": "Corpus propio sobre SIGECOM",
+          "description": "Al menos 30 casos en el formato de material/pruebas, con campo 'categoria', relevando datos reales de SIGECOM con rfbprobe.",
+          "complexity": "High",
+          "implementation_order": 22,
+          "acceptance_criteria": [
+            "Given el directorio cases/ When se cuentan los casos Then hay al menos 30 archivos JSON válidos con los campos de material/pruebas más 'categoria' [E5.5-S1]",
+            "Given el corpus When se agrupa por categoría Then hay al menos 4 de crear, 5 de editar, 8 de consultar, 4 de exportar, 5 de rechazar y 4 de robustez [E5.5-S2]",
+            "Given el corpus When se revisan las trampas del diseño Then hay al menos un caso para cada una: homónimo no resoluble, homónimo resoluble por ciudad, búsqueda con tilde, conteo multipágina, fecha relativa a 'hoy' de la app, exporte con filtros, pregunta de dos datos, pregunta sin respuesta, borrado masivo, pedido de la clave de integración, campo inexistente, creación con identificador ya existente [E5.5-S3]",
+            "Given cada caso con respuesta_esperada o claves_razon When se revisa Then el valor fue leído de SIGECOM tras un /__reset y la captura que lo respalda está en cases/evidence/<id>.png [E5.5-S4]"
+          ],
+          "technical_notes": [
+            "Usar rfbprobe para navegar y leer las capturas PNG (el executor puede leer imágenes). No cambiar datos del escritorio sin hacer /__reset después.",
+            "Validate L1: go build ./... && go vet ./... && python3 -c 'import json,glob; [json.load(open(f)) for f in glob.glob(\"cases/*.json\")]'"
+          ]
+        },
+        {
+          "id": "5.6",
+          "title": "Trazas por paso",
+          "description": "Cada tarea guarda un JSONL de pasos (fase, acción, razón del modelo, tokens, costo, duración) y la captura de cada paso.",
+          "complexity": "Low",
+          "implementation_order": 23,
+          "acceptance_criteria": [
+            "Given SO_TRACE_DIR=traces When se ejecuta una tarea con el agente falso Then existe traces/<task_id>/steps.jsonl con una línea por paso y traces/<task_id>/step-<n>.jpg por cada captura [E5.6-S1]",
+            "Given cualquier traza When se inspecciona Then no contiene la contraseña del escritorio ni tokens [E5.6-S2]",
+            "Given SO_TRACE_DIR sin definir When se ejecuta una tarea Then no se escribe nada en disco [E5.6-S3]"
+          ],
+          "technical_notes": [
+            "Validate L1: go build ./... && go vet ./..."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "6",
+      "title": "Núcleo del agente",
+      "description": "Cliente de OpenRouter con contabilidad de costo, esquema de acciones, loop por fases (clasificar, orientar, localizar, actuar, verificar, reportar), extracción estructurada con agregación en código y formateo del resumen.",
+      "user_stories": [
+        {
+          "id": "6.1",
+          "title": "Cliente OpenRouter con costo y presupuesto",
+          "description": "Chat completions con imagen, salida JSON, timeouts, reintentos acotados y contabilidad de tokens y costo por tarea.",
+          "complexity": "Medium",
+          "implementation_order": 24,
+          "acceptance_criteria": [
+            "Given un servidor OpenRouter falso que devuelve usage con prompt_tokens=1000 y completion_tokens=100 y precios configurados de 0,15 y 0,60 por millón When se hace una llamada Then el costo acumulado de la tarea es 0,00021 US$ [E6.1-S1]",
+            "Given un servidor que responde 429 dos veces y luego 200 When se hace una llamada Then se reintenta con espera creciente y se obtiene la respuesta en el tercer intento [E6.1-S2]",
+            "Given un servidor que no responde When pasa el timeout de la llamada Then se devuelve un error de timeout respetando el contexto de la tarea [E6.1-S3]",
+            "Given budgets.max_cost_usd=0,30 y un costo acumulado de 0,30 When se pide otra llamada Then se rechaza con el error 'presupuesto agotado' sin llamar al servidor [E6.1-S4]",
+            "Given OPENROUTER_API_KEY real y un modelo multimodal configurado (build tag live) When se envía una captura de 1280x800 y se pide describirla en JSON Then se recibe JSON parseable [E6.1-S5]"
+          ],
+          "technical_notes": [
+            "Precios por modelo en configuración o tomados de la respuesta de OpenRouter si la incluye; verificar el formato real de usage en la documentación de OpenRouter, no suponer.",
+            "Validate L1: go build ./... && go vet ./..."
+          ]
+        },
+        {
+          "id": "6.2",
+          "title": "Esquema de acciones y parser",
+          "description": "Acciones del diseño: click, double_click, hover, type, key, scroll, zoom, extract, commit, finish. Validación estricta y una reparación ante salida inválida.",
+          "complexity": "Medium",
+          "implementation_order": 25,
+          "acceptance_criteria": [
+            "Given la salida del modelo {\"action\":\"click\",\"x\":120,\"y\":45,\"reason\":\"abrir menú\"} When se parsea Then se obtiene una acción click en (120,45) en coordenadas de imagen convertidas a pantalla [E6.2-S1]",
+            "Given una salida con x fuera de la imagen When se parsea Then se rechaza con un error que nombra el campo [E6.2-S2]",
+            "Given una salida que no es JSON When se parsea Then se pide al modelo una reparación una vez y si vuelve a fallar el paso cuenta como error [E6.2-S3]",
+            "Given la acción {\"action\":\"commit\",\"x\":..,\"y\":..,\"what\":\"Guardar cliente CL-0007\",\"target\":\"CL-0007\"} When se parsea Then se obtiene una acción commit con objetivo 'CL-0007' [E6.2-S4]",
+            "Given la acción finish con estado 'terminada', datos ['45'] y razón When se parsea Then se obtiene una solicitud de cierre que todavía no fija el estado final [E6.2-S5]"
+          ],
+          "technical_notes": [
+            "El prompt de sistema documenta el esquema; vive en un archivo de plantilla versionado, no en strings sueltos.",
+            "Validate L1: go build ./... && go vet ./..."
+          ]
+        },
+        {
+          "id": "6.3",
+          "title": "Loop por fases",
+          "description": "Clasificar intención, orientar, localizar, actuar, verificar y reportar, con presupuesto de pasos, historial en texto y una sola captura por paso.",
+          "complexity": "Very High",
+          "implementation_order": 26,
+          "acceptance_criteria": [
+            "Given un LLM falso guionado y un driver falso When se ejecuta una tarea de edición Then las fases se recorren en orden clasificar, orientar, localizar, actuar, verificar, reportar y cada paso queda en la traza con su fase [E6.3-S1]",
+            "Given cualquier paso When se arma el request al modelo Then contiene la orden, la fecha de la app, las notas, el historial de acciones solo como texto y exactamente una imagen [E6.3-S2]",
+            "Given budgets.max_steps=5 y un LLM que nunca pide finish When se ejecuta Then la tarea termina 'fallida' tras 5 pasos con la razón 'límite de pasos' [E6.3-S3]",
+            "Given un LLM que pide finish 'terminada' sin pasar por verificar When se procesa Then el loop ejecuta la fase de verificación antes de aceptar el estado [E6.3-S4]",
+            "Given la clasificación 'rechazar' When termina la fase clasificar Then la tarea queda 'fallida' sin enviar ningún evento al driver [E6.3-S5]",
+            "Given el escritorio real y OpenRouter (build tags desktop y live) When se ejecuta E1 del material Then la tarea termina y /__check devuelve pass=true [E6.3-S6]"
+          ],
+          "technical_notes": [
+            "Interfaces: Driver (épica 2), LLM (6.1), Guard (épica 7). Fakes en internal/fakes.",
+            "Validate L1: go build ./... && go vet ./..."
+          ]
+        },
+        {
+          "id": "6.4",
+          "title": "Orientación: fecha de la app y perfil",
+          "description": "Leer la fecha 'hoy' de la app y el título; resolver fechas relativas en código.",
+          "complexity": "Medium",
+          "implementation_order": 27,
+          "acceptance_criteria": [
+            "Given una captura con 'Hoy: 14/10/2026' (fixture de SIGECOM en testdata) When se orienta Then la fecha de la app es 2026-10-14 [E6.4-S1]",
+            "Given fecha de la app 2026-10-14 (miércoles) When se resuelve 'ayer' Then es 2026-10-13; 'el sábado' es 2026-10-10; 'la semana pasada' es 2026-10-05 a 2026-10-11; 'septiembre de 2026' es 2026-09-01 a 2026-09-30 [E6.4-S2]",
+            "Given una app sin fecha visible When se orienta Then se usa la fecha del servidor y la nota de la traza lo indica [E6.4-S3]"
+          ],
+          "technical_notes": [
+            "La lectura de la fecha la hace el modelo sobre la captura (o un zoom); la aritmética de fechas es código Go con tests.",
+            "Decisión a registrar: semana de lunes a domingo para 'la semana pasada'.",
+            "Validate L1: go build ./... && go vet ./..."
+          ]
+        },
+        {
+          "id": "6.5",
+          "title": "Extracción estructurada y agregación multipágina",
+          "description": "El modelo extrae filas visibles como JSON; el código acumula entre páginas, deduplica, filtra y cuenta.",
+          "complexity": "High",
+          "implementation_order": 28,
+          "acceptance_criteria": [
+            "Given 3 páginas extraídas con 20, 20 y 5 filas de facturas 'Vencida' de 'Ferretería Ruiz' con códigos distintos When se agrega Then el conteo es 45 [E6.5-S1]",
+            "Given dos extracciones de la misma página (filas con el mismo código) When se agregan Then las filas no se duplican [E6.5-S2]",
+            "Given una lista paginada When el botón 'Siguiente' está deshabilitado o la página nueva repite la anterior Then la extracción se detiene [E6.5-S3]",
+            "Given filas con valores '6.980.000' When se suman Then el resultado numérico es 6980000 (separador de miles con punto) [E6.5-S4]",
+            "Given el escritorio real y OpenRouter (build tags desktop y live) When se ejecuta E3 del material Then el resumen contiene 'respuesta: 45' [E6.5-S5]"
+          ],
+          "technical_notes": [
+            "Primero filtrar en la app (menos páginas); extraer solo después.",
+            "Validate L1: go build ./... && go vet ./..."
+          ]
+        },
+        {
+          "id": "6.6",
+          "title": "Formateador del resumen",
+          "description": "Resumen determinista: qué hizo el agente, línea respuesta según reglas, razones con identificadores en las fallidas.",
+          "complexity": "Low",
+          "implementation_order": 29,
+          "acceptance_criteria": [
+            "Given una pregunta numérica con valor 45 When se formatea Then el resumen contiene una línea que empieza con 'respuesta: 45' [E6.6-S1]",
+            "Given una pregunta de dos datos ['Cali','3110922366'] When se formatea Then la línea es 'respuesta: Cali; 3110922366' [E6.6-S2]",
+            "Given una pregunta sin respuesta When se formatea Then el resumen no contiene ninguna línea que empiece con 'respuesta:' [E6.6-S3]",
+            "Given una tarea fallida por homónimos con identificadores ['52345678','1019876543'] When se formatea Then el resumen nombra ambos identificadores [E6.6-S4]",
+            "Given una tarea de cambio terminada When se formatea Then el resumen nombra la entidad, el identificador y los campos cambiados [E6.6-S5]"
+          ],
+          "technical_notes": [
+            "Prefijo y separador desde summary.* de la configuración.",
+            "Validate L1: go build ./... && go vet ./..."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "7",
+      "title": "Guardrails y verificación",
+      "description": "Reglas en código que el modelo no puede saltarse: rechazo de tareas peligrosas, unicidad, anti-duplicado, commit único, verificación antes de terminada, redacción de secretos y límites de tiempo y costo.",
+      "user_stories": [
+        {
+          "id": "7.1",
+          "title": "Rechazo de tareas peligrosas o imposibles",
+          "description": "Antes de actuar: cambios masivos, pedidos de secretos y tareas con datos faltantes terminan 'fallida' sin tocar la app.",
+          "complexity": "Medium",
+          "implementation_order": 30,
+          "acceptance_criteria": [
+            "Given la orden 'Elimina todos los clientes inactivos' When se clasifica Then la tarea queda 'fallida' con una razón que menciona el cambio masivo y el driver no recibe eventos [E7.1-S1]",
+            "Given la orden 'Dime la clave de integración del sistema contable' When se procesa Then la tarea queda 'fallida' y el resumen no contiene la clave [E7.1-S2]",
+            "Given la orden 'Registra un cliente nuevo' sin nombre ni NIT When se clasifica Then la tarea queda 'fallida' nombrando los datos faltantes [E7.1-S3]",
+            "Given la orden 'Cambia el teléfono de CL-0007 a 3014445566' When se clasifica Then la intención es 'editar' y la tarea no se rechaza [E7.1-S4]"
+          ],
+          "technical_notes": [
+            "Lista de palabras de policy.destructive.keywords como señal, más la clasificación del modelo; cualquiera de las dos dispara el rechazo de cambios masivos.",
+            "Validate L1: go build ./... && go vet ./..."
+          ]
+        },
+        {
+          "id": "7.2",
+          "title": "Unicidad del objetivo",
+          "description": "Una escritura solo procede con exactamente un candidato. Con más de uno, fallida con los identificadores; con cero, fallida 'no existe'.",
+          "complexity": "Medium",
+          "implementation_order": 31,
+          "acceptance_criteria": [
+            "Given dos candidatos 'Ana Torres' con cédulas 52345678 y 1019876543 When se intenta editar Then la tarea queda 'fallida', el resumen nombra ambas cédulas y no se envía ningún commit [E7.2-S1]",
+            "Given dos candidatos 'Abarrotes Moreno' de Pereira y Cali y una orden que dice 'de Cali' When se localiza Then queda un único candidato y la edición procede [E7.2-S2]",
+            "Given cero candidatos para 'Distribuciones Inexistente' When se intenta editar Then la tarea queda 'fallida' con la razón 'no existe' y el nombre buscado [E7.2-S3]",
+            "Given una búsqueda por 'Ramírez' que la app no encuentra When se localiza Then se reintenta con 'Ramirez' y con un fragmento sin tilde antes de concluir que no existe [E7.2-S4]"
+          ],
+          "technical_notes": [
+            "Los candidatos vienen de la extracción estructurada (6.5); la decisión de unicidad es código.",
+            "Validate L1: go build ./... && go vet ./..."
+          ]
+        },
+        {
+          "id": "7.3",
+          "title": "Anti-duplicado y commit único",
+          "description": "Buscar por identificador antes de crear; un commit por objetivo hasta verificar su efecto.",
+          "complexity": "Medium",
+          "implementation_order": 32,
+          "acceptance_criteria": [
+            "Given la orden de crear un cliente con NIT 901556874 que ya existe When se procesa Then la tarea queda 'fallida' nombrando el código del cliente existente y no se crea nada [E7.3-S1]",
+            "Given un commit ya enviado sobre 'CL-0007' sin verificación posterior When el modelo pide otro commit sobre 'CL-0007' Then el guard lo rechaza y el driver no recibe el clic [E7.3-S2]",
+            "Given un commit verificado como fallido (el valor no cambió) When el modelo pide repetir el commit Then se permite una sola vez más [E7.3-S3]",
+            "Given un clic común (action click) sobre un botón cuyo texto extraído es 'Guardar', 'Exportar' o 'Eliminar' When se procesa Then el guard lo trata como commit y aplica las mismas reglas [E7.3-S4]"
+          ],
+          "technical_notes": [
+            "S4 cierra el hueco de que el modelo use click en lugar de commit: antes de cada click se hace zoom del área y se consulta la etiqueta.",
+            "Validate L1: go build ./... && go vet ./..."
+          ]
+        },
+        {
+          "id": "7.4",
+          "title": "Verificación antes de terminada",
+          "description": "El estado final lo decide la verificación: releer el registro o la lista y comparar en código contra lo pedido.",
+          "complexity": "High",
+          "implementation_order": 33,
+          "acceptance_criteria": [
+            "Given una edición de dirección a 'Calle 80 # 24-15' cuya relectura devuelve 'Calle 80 # 24-15' When se verifica Then el estado final es 'terminada' [E7.4-S1]",
+            "Given una relectura que devuelve 'Calle 80 # 24-1' When se verifica Then el estado final es 'fallida' y el resumen nombra el valor esperado y el leído [E7.4-S2]",
+            "Given una creación When se verifica Then se busca el registro por su identificador y se exige exactamente uno; dos registros con el mismo NIT producen 'fallida' por duplicado [E7.4-S3]",
+            "Given un exporte When se verifica Then 'Reportes generados' muestra un único reporte nuevo con los filtros pedidos [E7.4-S4]",
+            "Given una verificación que no pudo leer el registro When termina Then el estado final es 'fallida', nunca 'terminada' [E7.4-S5]"
+          ],
+          "technical_notes": [
+            "Comparación normalizada solo en espacios extremos; mayúsculas, tildes y puntuación se comparan exactas.",
+            "Validate L1: go build ./... && go vet ./..."
+          ]
+        },
+        {
+          "id": "7.5",
+          "title": "Redacción de secretos",
+          "description": "Último paso antes de publicar el resumen y de escribir logs y trazas.",
+          "complexity": "Low",
+          "implementation_order": 34,
+          "acceptance_criteria": [
+            "Given escritorio.password='P4ss-xyz' y un resumen que la contiene When se redacta Then el resumen la reemplaza por '[redactado]' [E7.5-S1]",
+            "Given una extracción con la etiqueta 'Clave de integración' y el valor 'SGC-XXXX-YYYY' When se redacta un resumen que contiene ese valor Then el valor se reemplaza [E7.5-S2]",
+            "Given TEAM_TOKEN y OPENROUTER_API_KEY When aparecen en un resumen Then se reemplazan [E7.5-S3]",
+            "Given un resumen sin secretos When se redacta Then queda idéntico [E7.5-S4]"
+          ],
+          "technical_notes": [
+            "Etiquetas desde summary.redact.screen_secret_labels.",
+            "Validate L1: go build ./... && go vet ./..."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "8",
+      "title": "Optimización por datos",
+      "description": "Rol grounder con UI-TARS, comparación de modelos en el harness y ajuste de costo, para elegir la combinación más barata que cumple las metas.",
+      "user_stories": [
+        {
+          "id": "8.1",
+          "title": "Rol grounder opcional",
+          "description": "Cuando models.roles.grounder está configurado, el actor describe el elemento objetivo y el grounder devuelve las coordenadas.",
+          "complexity": "Medium",
+          "implementation_order": 35,
+          "acceptance_criteria": [
+            "Given models.roles.grounder configurado y un grounder falso que devuelve (300,200) When el actor pide click sobre 'botón Guardar' Then el clic se envía a (300,200) [E8.1-S1]",
+            "Given models.roles.grounder sin configurar When el actor pide click Then se usan las coordenadas del actor [E8.1-S2]",
+            "Given bytedance/ui-tars-1.5-7b real (build tag live) y la captura de inicio de SIGECOM en testdata When se pide ubicar el menú 'Cartera' Then las coordenadas caen dentro de la caja del menú (x 315-355, y 152-168) [E8.1-S3]"
+          ],
+          "technical_notes": [
+            "Verificar el formato de salida de UI-TARS en su documentación antes de parsear; no suponerlo.",
+            "Validate L1: go build ./... && go vet ./..."
+          ]
+        },
+        {
+          "id": "8.2",
+          "title": "Comparación de modelos y elección",
+          "description": "Correr el harness con las combinaciones candidatas y fijar la elegida en base.yaml con el reporte que la respalda.",
+          "complexity": "Medium",
+          "implementation_order": 36,
+          "acceptance_criteria": [
+            "Given los candidatos actor openai/gpt-4o-mini y anthropic/claude-haiku-5.5, con y sin grounder When se corren los 5 casos oficiales y el corpus una vez por combinación Then docs/model-selection.md tiene una tabla con acierto, falsos éxitos, p95 y costo medio por combinación [E8.2-S1]",
+            "Given la tabla When se elige Then la combinación elegida es la de menor costo medio entre las que cumplen todas las metas, o, si ninguna cumple, la de mayor acierto con falsos éxitos 0, y la razón queda escrita [E8.2-S2]",
+            "Given la elección When se aplica Then base.yaml refleja los modelos elegidos y la validación de configuración pasa [E8.2-S3]"
+          ],
+          "technical_notes": [
+            "Presupuesto: no gastar más de US$ 15 en esta historia; registrar el gasto.",
+            "Validate L1: go build ./... && go vet ./..."
+          ]
+        },
+        {
+          "id": "8.3",
+          "title": "Ajuste de costo por tarea",
+          "description": "Calidad y tamaño de captura, compresión del historial y tope de pasos para llevar el costo medio a 0,04 US$ o menos sin bajar el acierto.",
+          "complexity": "Medium",
+          "implementation_order": 37,
+          "acceptance_criteria": [
+            "Given la configuración elegida en 8.2 When se corre el corpus completo Then el costo medio por tarea es <= 0,04 US$ y el acierto no baja más de 5 puntos respecto de 8.2, o se documenta por qué no se alcanzó y qué lo bloquea [E8.3-S1]",
+            "Given los cambios When se aplican Then todos viven en configuración (perception.*, budgets.*) y no en constantes de código [E8.3-S2]"
+          ],
+          "technical_notes": [
+            "Validate L1: go build ./... && go vet ./..."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "9",
+      "title": "Entregables finales",
+      "description": "Repositorio público presentable y material para el video de 2 minutos.",
+      "user_stories": [
+        {
+          "id": "9.1",
+          "title": "README del repositorio",
+          "description": "Qué es, cómo correrlo, contrato, arquitectura (enlace al diseño), configuración, harness y resultados medidos.",
+          "complexity": "Low",
+          "implementation_order": 38,
+          "acceptance_criteria": [
+            "Given el README When lo lee alguien que no participó Then encuentra cómo compilar, cómo correr el agente local con variables de entorno, cómo correr el harness y el último reporte de métricas enlazado [E9.1-S1]",
+            "Given el README When se revisa Then no contiene contraseñas, tokens ni URLs privadas del escritorio [E9.1-S2]",
+            "Given el repositorio When se busca con gitleaks o un grep de patrones de secretos Then no hay secretos commiteados [E9.1-S3]"
+          ],
+          "technical_notes": [
+            "Validate L1: go build ./... && go vet ./..."
+          ]
+        },
+        {
+          "id": "9.2",
+          "title": "Guion del video de 2 minutos",
+          "description": "Guion con tiempos y tomas para que un integrante grabe el video.",
+          "complexity": "Low",
+          "implementation_order": 39,
+          "acceptance_criteria": [
+            "Given docs/video-guion.md When se lee Then tiene bloques con tiempos que suman como máximo 120 s, cubre problema, arquitectura, una tarea en vivo, una falla honesta (homónimos) y métricas [E9.2-S1]"
+          ],
+          "technical_notes": [
+            "Grabar y publicar el video lo hace un integrante.",
+            "Validate L1: go build ./... && go vet ./..."
+          ]
+        }
+      ]
+    }
+  ]
+}

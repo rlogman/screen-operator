@@ -1,0 +1,27 @@
+# Artifex project-local untracked files
+# This file is placed at .artifex/.gitignore
+
+# SQLite database (binary, per-developer state)
+tickets.db
+
+# Recall index: a derived cache over lessons/ and evals/, both of which ARE
+# tracked. Binary, rebuilt on demand from a corpus signature, and it would
+# conflict on every merge for no gain.
+knowledge-index.db
+
+# Per-session traces (noisy, use evals for persistent quality data)
+traces/
+
+# PM credentials and API keys
+pm-config.json
+
+# Transient output (dashboards, exports, scratch files)
+tmp/
+
+# Agent-run artifacts: loop iteration briefs/packets/reports, audit scan
+# output, skill pressure-test working copies. Same argument as traces/ —
+# they are per-run transcripts, and what is worth keeping from them belongs
+# in a lesson, an eval, or the CHANGELOG, not in 65 files nobody reads.
+loops/
+audit/
+skill-tests/

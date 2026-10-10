@@ -1,0 +1,85 @@
+# Configuracion base del agente. Todo lo que no depende de la superficie ni de la app.
+# Orden de resolucion por tarea: base.yaml <- surfaces/<x>.yaml <- apps/<y>.yaml <- overlay de entorno.
+# Merge: mapas se fusionan en profundidad, listas y escalares se reemplazan.
+version: 1
+
+contract:
+  auth:
+    scheme: bearer
+    token_env: TEAM_TOKEN
+  routes:
+    health: { method: GET, path: /health }
+    create: { method: POST, path: /tasks }
+    get: { method: GET, path: "/tasks/{task_id}" }
+  request:
+    task_field: tarea
+    desktop_url_field: escritorio.url
+    desktop_secret_fields: [escritorio.password]
+  response:
+    id_field: task_id
+    status_field: estado
+    summary_field: resumen
+    status_values:
+      running: en_curso
+      done: terminada
+      failed: fallida
+  create_timeout_ms: 2000
+
+summary:
+  answer_line_prefix: "respuesta: "
+  multi_value_separator: "; "
+  number_first: true
+  omit_answer_when_unanswerable: true
+  failure_must_name_identifiers: true
+  redact:
+    from_request_fields: [escritorio.password]
+    from_env: [TEAM_TOKEN, OPENROUTER_API_KEY]
+    # Valores vistos en pantalla junto a estas etiquetas se tratan como secretos.
+    screen_secret_labels: [clave, contraseña, password, token, api key, secreto]
+    replacement: "[redactado]"
+
+budgets:
+  task_deadline_s: 300
+  safety_margin_s: 30
+  max_steps: 60
+  max_cost_usd: 0.30
+
+perception:
+  screenshot:
+    format: jpeg
+    jpeg_quality: 80
+    max_width: 1280
+  zoom:
+    enabled: true
+    factor: 2
+    max_per_step: 1
+
+models:
+  provider: openrouter
+  base_url: https://openrouter.ai/api/v1
+  api_key_env: OPENROUTER_API_KEY
+  # Candidatos a comparar en el harness (precios OpenRouter 2026-10-10, US$ por M tokens in/out):
+  #   actor:    openai/gpt-4o-mini (0.15/0.60), anthropic/claude-haiku-5.5 (0.10/0.50)
+  #   grounder: bytedance/ui-tars-1.5-7b (0.10/0.20)
+  roles:
+    actor: { model: openai/gpt-4o-mini, temperature: 0, max_tokens: 800 }
+    verifier: { model: openai/gpt-4o-mini, temperature: 0, max_tokens: 400 }
+
+policy:
+  today_source: app
+  ambiguity:
+    on_multiple_matches: fail
+    name_identifiers_in_reason: true
+  writes:
+    check_existing_before_create: true
+    verify_after_write: true
+    never_resubmit_without_verify: true
+  destructive:
+    bulk_changes: fail
+    keywords: [eliminar, borrar, anular, cancelar, vaciar, todos, todas]
+    require_unique_target: true
+  unknown_values: fail
+  stop_on_report: true
+
+# Hints de app opcionales. Vacio = agente generico que aprende la app dentro de la tarea.
+app: {}

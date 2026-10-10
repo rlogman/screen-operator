@@ -1,0 +1,8 @@
+bin/
+.env
+.artifex/*.db
+.artifex/loops/
+traces/
+runs/
+*.zip
+.DS_Store

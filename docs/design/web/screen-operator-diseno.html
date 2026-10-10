@@ -1,0 +1,429 @@
+<title>Screen Operator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo+Narrow:wght@500;600;700&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: una columna de lectura (~70ch) con tablas y diagramas que pueden ensancharse; barra superior tipo ventana legada. */
+:root{
+  --bg:#f3f5f8; --surface:#ffffff; --fg:#1b2430; --muted:#5a6676; --line:#d6dce4;
+  --accent:#1f3a5f; --accent-2:#2f6fb3; --chip:#e7edf5; --warn:#9a5b00; --warn-bg:#fff4e0;
+  --ok:#1f7a4d; --bad:#a33a2b;
+  --f-display:"Archivo Narrow","Arial Narrow",system-ui,sans-serif;
+  --f-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#0f141b; --surface:#161d27; --fg:#e3e8ef; --muted:#9aa6b6; --line:#2a3442;
+  --accent:#8fb6e8; --accent-2:#6fa3e0; --chip:#1e2835; --warn:#f0b35a; --warn-bg:#2a2112;
+  --ok:#5cc58f; --bad:#ef8b7c; color-scheme:dark }}
+:root[data-theme="dark"]{
+  --bg:#0f141b; --surface:#161d27; --fg:#e3e8ef; --muted:#9aa6b6; --line:#2a3442;
+  --accent:#8fb6e8; --accent-2:#6fa3e0; --chip:#1e2835; --warn:#f0b35a; --warn-bg:#2a2112;
+  --ok:#5cc58f; --bad:#ef8b7c; color-scheme:dark }
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font:15px/1.6 var(--f-body);margin:0}
+.wrap{max-width:980px;margin:0 auto;padding-inline:20px;padding-block:0 64px}
+.titlebar{background:#1f3a5f;color:#fff;font:500 12.5px/1 var(--f-mono);display:flex;flex-wrap:wrap;gap:8px 20px;justify-content:space-between;padding:10px 20px}
+.titlebar span{opacity:.85}
+header.hero{padding-block:36px 8px}
+.eyebrow{font:500 12px/1.2 var(--f-mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+h1{font:700 clamp(34px,6vw,52px)/1.02 var(--f-display);letter-spacing:-.01em;margin:.25em 0 .2em;color:var(--accent);text-wrap:balance}
+.lede{font-size:18px;max-width:68ch;color:var(--fg)}
+.meta{display:flex;flex-wrap:wrap;gap:6px 18px;font:13px/1.4 var(--f-mono);color:var(--muted);margin-top:14px}
+nav.toc{margin:28px 0 8px;padding:14px 16px;border:1px solid var(--line);background:var(--surface);border-radius:4px}
+nav.toc ol{margin:0;padding-left:1.4em;columns:2 260px;column-gap:28px;font-size:14px}
+nav.toc a{color:var(--accent-2);text-decoration:none}
+nav.toc a:hover,nav.toc a:focus-visible{text-decoration:underline}
+section{padding-top:30px}
+h2{font:700 28px/1.15 var(--f-display);color:var(--accent);margin:0 0 .5em;text-wrap:balance;display:flex;gap:12px;align-items:baseline}
+h2 .n{font:500 13px/1 var(--f-mono);color:var(--muted)}
+h3{font:600 17px/1.3 var(--f-body);margin:1.4em 0 .4em}
+p,li{max-width:72ch}
+code,.mono{font-family:var(--f-mono);font-size:.88em}
+code{background:var(--chip);padding:1px 5px;border-radius:3px}
+.scroll{overflow-x:auto;margin:12px 0;border:1px solid var(--line);border-radius:4px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:14px;min-width:640px}
+th,td{text-align:left;vertical-align:top;padding:9px 12px;border-bottom:1px solid var(--line)}
+th{font:600 12px/1.3 var(--f-mono);text-transform:uppercase;letter-spacing:.05em;color:var(--muted);background:var(--chip)}
+tr:last-child td{border-bottom:0}
+td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
+.diagram{overflow-x:auto;background:var(--surface);border:1px solid var(--line);border-radius:4px;padding:16px;margin:12px 0}
+.diagram pre.mermaid{margin:0;background:transparent;display:flex;justify-content:center;min-width:640px}
+.cap{font:13px/1.4 var(--f-mono);color:var(--muted);margin-top:-4px}
+.note{border-left:3px solid var(--warn);background:var(--warn-bg);padding:10px 14px;margin:14px 0;max-width:none}
+.pill{display:inline-block;font:500 11.5px/1.6 var(--f-mono);padding:0 7px;border-radius:999px;background:var(--chip);color:var(--muted);white-space:nowrap}
+.pill.inf,.pill.open{color:var(--warn)}
+.pill.sup{color:var(--accent-2)}
+.pill.ver{color:var(--ok)}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}
+.grid2>div{min-width:0;background:var(--surface);border:1px solid var(--line);border-radius:4px;padding:12px 16px}
+.grid2 h3{margin-top:.2em}
+pre.code{font:13px/1.5 var(--f-mono);background:var(--surface);border:1px solid var(--line);border-radius:4px;padding:12px 14px;overflow-x:auto}
+footer{margin-top:40px;padding-top:14px;border-top:1px solid var(--line);font:13px/1.5 var(--f-mono);color:var(--muted)}
+@media (prefers-reduced-motion: reduce){*{scroll-behavior:auto}}
+</style>
+
+<div class="titlebar"><b>SCREEN OPERATOR · Diseño v1</b><span>Reto 1 · Frontier BOG/26 · RFB/WSS · 1280×800</span></div>
+<div class="wrap">
+
+<header class="hero">
+  <div class="eyebrow">Systems design · entrega 12:00 BOG</div>
+  <h1>Screen Operator</h1>
+  <p class="lede">Un agente que recibe una orden en lenguaje natural y la ejecuta, por pantalla, en una aplicación legada que nunca vio. No hay API, ni DOM, ni documentación: solo píxeles por VNC, mouse y teclado, y 5 minutos.</p>
+  <div class="meta"><span>Autor: Rodrigo</span><span>Estado: diseño previo a construcción</span><span>Fuentes: README del reto, pruebas E1–E5, recorrido de SIGECOM</span></div>
+</header>
+
+<nav class="toc" aria-label="Contenido"><ol>
+  <li><a href="#resumen">Resumen</a></li>
+  <li><a href="#problema">Problema y contrato</a></li>
+  <li><a href="#supuestos">Supuestos</a></li>
+  <li><a href="#dificiles">Casos difíciles</a></li>
+  <li><a href="#fuera">Fuera de alcance</a></li>
+  <li><a href="#arquitectura">Arquitectura C4</a></li>
+  <li><a href="#loop">El loop del agente</a></li>
+  <li><a href="#guardrails">Guardrails</a></li>
+  <li><a href="#config">Configuración declarativa</a></li>
+  <li><a href="#decisiones">Decisiones y trade-offs</a></li>
+  <li><a href="#medicion">Plan de medición</a></li>
+  <li><a href="#riesgos">Riesgos</a></li>
+  <li><a href="#plan">Plan de ejecución</a></li>
+</ol></nav>
+
+<section id="resumen">
+<h2><span class="n">01</span>Resumen</h2>
+<ul>
+  <li><b>Qué:</b> un servicio Go con el contrato pedido (<code>/health</code>, <code>POST /tasks</code>, <code>GET /tasks/{id}</code>) que opera el escritorio remoto con un cliente RFB propio y decide cada acción con un modelo multimodal vía OpenRouter.</li>
+  <li><b>Cómo gana:</b> la nota castiga más el error confiado que la falla honesta. Por eso la seguridad vive en código: no se escribe sobre un registro ambiguo, no se crea sin buscar antes, no se reporta <code>terminada</code> sin releer el resultado, y nada secreto sale en el resumen.</li>
+  <li><b>Cómo se adapta:</b> el agente no trae conocimiento de la app; lo construye dentro de la tarea. Lo que sí sabemos que cambia (contrato, superficie, tiempos, políticas) vive en YAML por capas validado con JSON Schema, para absorber el cambio de requisitos sin reescribir.</li>
+  <li><b>Cómo sabremos si funciona:</b> un harness que usa <code>/__reset</code> y <code>/__check</code> corre los 5 casos oficiales y un corpus propio de ~30 casos, uno o más por trampa, con metas de acierto, falso éxito, tiempo y costo.</li>
+</ul>
+</section>
+
+<section id="problema">
+<h2><span class="n">02</span>Problema y contrato</h2>
+<p>El evaluador envía una tarea y un escritorio. El agente responde un <code>task_id</code> en menos de 2 s y trabaja en segundo plano. El evaluador consulta cada 5 s durante un máximo de 5 min, y después resetea el escritorio para la tarea siguiente. Todo lo que el agente haga después de esa ventana cae en la tarea siguiente como acción fuera de la tarea.</p>
+<pre class="code">POST /tasks    Authorization: Bearer &lt;token del equipo&gt;
+{ "tarea": "Registra al cliente Papelería Los Andes, NIT 901234567, ...",
+  "escritorio": { "url": "wss://&lt;escritorio&gt;/websockify", "password": "&lt;clave&gt;" } }
+→ 200 { "task_id": "…" }                      (&lt; 2 s)
+
+GET /tasks/{id} → { "estado": "en_curso" | "terminada" | "fallida", "resumen": "…" }</pre>
+<p>Una tarea cuenta como correcta solo si se cumplen <b>todas</b> estas condiciones:</p>
+<div class="scroll"><table>
+<tr><th>Condición</th><th>Implicación de diseño</th></tr>
+<tr><td>La app quedó con los cambios esperados</td><td>Verificación final releyendo el registro, no confiando en el último clic</td></tr>
+<tr><td>Ningún cambio fuera de la tarea (además cuenta como destructivo)</td><td>Editar solo los campos pedidos; corte duro de input al reportar</td></tr>
+<tr><td>Ningún registro duplicado</td><td>Buscar antes de crear; nunca reenviar un formulario sin verificar</td></tr>
+<tr><td>Estado final correcto; un <code>terminada</code> falso se castiga</td><td>Ante duda, <code>fallida</code> con razón. La verificación decide el estado, no el modelo</td></tr>
+<tr><td>Preguntas: línea <code>respuesta: &lt;valor&gt;</code>, número primero, dos datos con <code>;</code></td><td>Formateador determinista; el modelo nunca escribe esa línea libremente</td></tr>
+<tr><td>Tareas que fallan: el resumen nombra los datos que lo explican</td><td>Las razones incluyen identificadores (NIT, cédula, código)</td></tr>
+<tr><td>El resumen no repite la clave del escritorio ni otros secretos</td><td>Redactor determinista como último paso, sin excepciones</td></tr>
+</table></div>
+</section>
+
+<section id="supuestos">
+<h2><span class="n">03</span>Supuestos</h2>
+<div class="scroll"><table>
+<tr><th>Supuesto</th><th>Base</th><th>Cómo lo validamos o qué hacemos si cae</th></tr>
+<tr><td>Podemos usar modelos multimodales genéricos vía OpenRouter: reciben la captura y devuelven la siguiente acción. El loop, la percepción y los guardrails son nuestros</td><td><span class="pill sup">supuesto</span> El evento entrega la key</td><td>Es la base del diseño</td></tr>
+<tr><td>Las tools nativas de computer use están permitidas si el costo queda dentro del presupuesto. Por defecto no las usamos: el esquema de acciones es nuestro</td><td><span class="pill ver">confirmado</span> Respuesta de la organización · <span class="pill sup">decisión</span> propia</td><td>Alternativa medible, no default: como el executor cubre las mismas primitivas, pasar a computer use es un adaptador en el Agent Loop. Se activa solo si el harness muestra que ubicar coordenadas es el cuello de botella y UI-TARS no lo resuelve. Pendiente verificar si OpenRouter deja pasar esa tool</td></tr>
+<tr><td>Cualquier modelo de OpenRouter está permitido, incluidos los entrenados para operar interfaces (p. ej. <code>bytedance/ui-tars-1.5-7b</code>)</td><td><span class="pill ver">confirmado</span> Respuesta de la organización</td><td>UI-TARS entra como candidato a rol <code>grounder</code> (ubicar elementos y devolver coordenadas); la decisión, el loop y la verificación siguen siendo nuestros</td></tr>
+<tr><td>Podemos usar un cliente VNC de terceros y keys propias de otros proveedores</td><td><span class="pill sup">supuesto</span></td><td>Amplía opciones; no cambia la arquitectura</td></tr>
+<tr><td>Cada app evaluada es nueva; no sirve pre-entrenar sobre SIGECOM</td><td><span class="pill ver">README</span> “otra app, que tu agente no ha visto”</td><td>Medimos siempre en modo <b>sin perfil de app</b></td></tr>
+<tr><td>Todas las apps son web dentro del mismo kiosko VNC</td><td><span class="pill ver">README</span> “Las apps se acceden igual que la de pruebas”</td><td>El driver queda detrás de una interfaz para no acoplarse</td></tr>
+<tr><td>El set oculto de 100+ casos corre completo con la reserva de US$ 5 → techo de ~US$ 0,04 por tarea</td><td><span class="pill sup">supuesto</span> Reserva bloqueada “para el set oculto”</td><td>Diseñamos para ese techo; el costo por tarea es una métrica de primera clase</td></tr>
+<tr><td><code>/__check</code> acepta pruebas propias en el mismo formato</td><td><span class="pill sup">supuesto</span> “Recibe una prueba”</td><td>Se prueba en la primera hora de ejecución; si no, puntuamos nuestras pruebas leyendo la Bitácora</td></tr>
+<tr><td>Las tres trampas de interacción del README aplican a cualquier app</td><td><span class="pill ver">README</span> Repintado ≤ 1 s, clic &lt; 100 ms ignorado, escritura que concatena</td><td>Viven en la capa de superficie, no en la de app</td></tr>
+</table></div>
+</section>
+
+<section id="dificiles">
+<h2><span class="n">04</span>Casos difíciles</h2>
+<p>Relevados con un recorrido de solo lectura por SIGECOM. Asumimos que la app de evaluación tendrá equivalentes, así que cada mitigación es genérica, no específica de SIGECOM.</p>
+<div class="scroll"><table>
+<tr><th>Trampa</th><th>Evidencia</th><th>Mitigación</th></tr>
+<tr><td>Homónimos y nombres casi iguales</td><td>Dos “Abarrotes Moreno” (Pereira, Cali); “Ramírez” y “Ramirez”; sufijos Ltda./S.A.S./y Cía.; E5 “Ana Torres” con dos cédulas</td><td>Guardrail de unicidad: más de una coincidencia → <code>fallida</code> nombrando los identificadores</td></tr>
+<tr><td>Búsqueda que distingue tildes</td><td>Nota en pantalla: “Ramírez no trae Ramirez”</td><td>Buscar por fragmento sin tilde y también con tilde; o por identificador cuando la tarea lo da</td></tr>
+<tr><td>Listas paginadas</td><td>20 filas por página; E3 espera 45</td><td>Filtrar en la app, extraer filas de cada página como JSON, contar en código</td></tr>
+<tr><td>“Hoy” no es la fecha real</td><td>Barra superior: “Hoy: 14/10/2026” con fecha real 10/10</td><td>Leer la fecha de la app al orientar; las fechas relativas se resuelven en código</td></tr>
+<tr><td>Términos ambiguos</td><td>Facturas en estado “Pendiente” con vencimiento ya pasado</td><td>Preferir el estado explícito de la app; registrar la interpretación en el resumen</td></tr>
+<tr><td>Submenús por hover</td><td>Comercial › Maestros › Clientes</td><td>Primitiva <code>hover</code> con permanencia configurable</td></tr>
+<tr><td>Menú que se cierra con un segundo clic</td><td>Clic sobre un menú abierto lo cierra</td><td>Verificar la captura tras cada acción, nunca encadenar a ciegas</td></tr>
+<tr><td>Secreto visible en pantalla</td><td>Integraciones muestra una clave con “No comparta esta clave”</td><td>Redacción de valores junto a etiquetas sensibles + la clave recibida</td></tr>
+<tr><td>Exportes que dejan rastro</td><td>“Reportes generados”; descargas solo para supervisor</td><td>Exportar una sola vez, con los filtros exactos; verificar en el listado de reportes</td></tr>
+<tr><td>Tareas imposibles o peligrosas</td><td>E5 debe fallar; README: “imposible o peligrosa → fallida”</td><td>Clasificación de intención al inicio; cambios masivos bloqueados en código</td></tr>
+<tr><td>Interacción lenta y caprichosa</td><td>Repintado ≤ 1 s; clic &lt; 100 ms ignorado; escritura concatena</td><td>Clic de 150 ms, select-all antes de escribir, espera por estabilidad de framebuffer</td></tr>
+</table></div>
+</section>
+
+<section id="fuera">
+<h2><span class="n">05</span>Fuera de alcance</h2>
+<ul>
+  <li><b>Memoria entre tareas.</b> El escritorio se resetea y la app puede cambiar entre tareas; lo aprendido podría inducir errores. Se reconsidera solo si medimos que la misma app se repite.</li>
+  <li><b>Apps nativas fuera del navegador.</b> El README garantiza el mismo acceso que la app de pruebas.</li>
+  <li><b>Descarga de archivos exportados.</b> La app la restringe al supervisor; la tarea se cumple con el exporte registrado.</li>
+  <li><b>Varias tareas simultáneas en un mismo escritorio.</b> Una sesión VNC opera una pantalla; serializamos por escritorio.</li>
+  <li><b>Tools nativas de computer use como default.</b> Están permitidas, pero perderíamos la acción <code>commit</code> que hace cumplir los guardrails y quedaríamos atados a un proveedor. Quedan como alternativa medible.</li>
+  <li><b>Aprender con fine-tuning.</b> No cabe en un día ni en el presupuesto; el aprendizaje es dentro del contexto.</li>
+</ul>
+</section>
+
+<section id="arquitectura">
+<h2><span class="n">06</span>Arquitectura C4</h2>
+<h3>Nivel 1 · Contexto</h3>
+<div class="diagram"><pre class="mermaid">flowchart LR
+  eval["&lt;b&gt;Evaluador&lt;/b&gt;&lt;br/&gt;[Persona / sistema externo]&lt;br/&gt;Envía tareas en lenguaje natural&lt;br/&gt;y consulta el resultado"]
+  so["&lt;b&gt;Screen Operator&lt;/b&gt;&lt;br/&gt;[Sistema de software]&lt;br/&gt;Agente que aprende a operar apps&lt;br/&gt;sin API, solo por pantalla"]
+  desk["&lt;b&gt;Escritorio remoto&lt;/b&gt;&lt;br/&gt;[Sistema externo]&lt;br/&gt;Navegador kiosko 1280x800 con la app&lt;br/&gt;legada (SIGECOM o desconocida), solo VNC"]
+  llm["&lt;b&gt;OpenRouter&lt;/b&gt;&lt;br/&gt;[Sistema externo]&lt;br/&gt;Modelos multimodales&lt;br/&gt;(presupuesto US$ 50)"]
+  team["&lt;b&gt;Equipo&lt;/b&gt;&lt;br/&gt;[Persona]&lt;br/&gt;Ajusta configuración&lt;br/&gt;y mide con el harness"]
+
+  eval -- "POST /tasks, GET /tasks/{id}&lt;br/&gt;[HTTPS + Bearer]" --&gt; so
+  so -- "Ve píxeles, envía mouse y teclado&lt;br/&gt;[RFB sobre WSS]" --&gt; desk
+  so -- "Captura + historial → próxima acción&lt;br/&gt;[HTTPS, chat completions]" --&gt; llm
+  team -- "Edita YAML, corre pruebas&lt;br/&gt;[git / CLI]" --&gt; so
+  team -. "/__reset, /__check&lt;br/&gt;[HTTPS + token escritorio]" .-&gt; desk
+
+  classDef person fill:#08427b,color:#fff,stroke:#052e56
+  classDef sys fill:#1168bd,color:#fff,stroke:#0b4884
+  classDef ext fill:#999,color:#fff,stroke:#6b6b6b
+  class eval,team person
+  class so sys
+  class desk,llm ext</pre></div>
+<h3>Nivel 2 · Contenedores</h3>
+<div class="diagram"><pre class="mermaid">flowchart TB
+  eval["&lt;b&gt;Evaluador&lt;/b&gt;&lt;br/&gt;[Persona / sistema]"]
+  team["&lt;b&gt;Equipo&lt;/b&gt;&lt;br/&gt;[Persona]"]
+  subgraph so["Screen Operator [Sistema]"]
+    direction TB
+    svc["&lt;b&gt;Agent Service&lt;/b&gt;&lt;br/&gt;[Contenedor: binario Go, Railway]&lt;br/&gt;API del contrato, runner de tareas,&lt;br/&gt;loop del agente, driver RFB"]
+    cfg["&lt;b&gt;Config bundle&lt;/b&gt;&lt;br/&gt;[Contenedor: YAML + JSON Schema]&lt;br/&gt;base · superficie · app · overlay"]
+    traces["&lt;b&gt;Trazas&lt;/b&gt;&lt;br/&gt;[Contenedor: JSONL + PNG en disco]&lt;br/&gt;Paso a paso: captura, acción, costo"]
+    harness["&lt;b&gt;Eval Harness&lt;/b&gt;&lt;br/&gt;[Contenedor: CLI Go]&lt;br/&gt;Corre casos, puntúa, reporta métricas"]
+    cases["&lt;b&gt;Corpus de casos&lt;/b&gt;&lt;br/&gt;[Contenedor: JSON, formato pruebas/]&lt;br/&gt;5 oficiales + propios por trampa"]
+  end
+  desk["&lt;b&gt;Escritorio remoto&lt;/b&gt;&lt;br/&gt;[Sistema externo: noVNC/RFB]"]
+  llm["&lt;b&gt;OpenRouter&lt;/b&gt;&lt;br/&gt;[Sistema externo]"]
+
+  eval -- "POST /tasks, GET /tasks/{id}&lt;br/&gt;[HTTPS + Bearer]" --&gt; svc
+  svc -- "Lee y valida al arrancar&lt;br/&gt;y al recargar" --&gt; cfg
+  svc -- "Escribe" --&gt; traces
+  svc -- "RFB sobre WSS" --&gt; desk
+  svc -- "HTTPS" --&gt; llm
+  harness -- "POST /tasks, polling 5 s" --&gt; svc
+  harness -- "/__reset, /__check" --&gt; desk
+  harness -- "Lee" --&gt; cases
+  harness -- "Lee costo y pasos" --&gt; traces
+  team -- "Edita" --&gt; cfg
+  team -- "Ejecuta" --&gt; harness
+
+  classDef person fill:#08427b,color:#fff,stroke:#052e56
+  classDef cont fill:#438dd5,color:#fff,stroke:#2e6295
+  classDef ext fill:#999,color:#fff,stroke:#6b6b6b
+  class eval,team person
+  class svc,cfg,traces,harness,cases cont
+  class desk,llm ext
+  style so fill:none,stroke:#0b4884,stroke-dasharray: 5 5</pre></div>
+<p class="cap">Un solo binario desplegado. El harness y el corpus viven en el repo y corren desde la máquina del equipo contra el servicio desplegado.</p>
+<h3>Nivel 3 · Componentes del Agent Service</h3>
+<div class="diagram"><pre class="mermaid">flowchart TB
+  eval["&lt;b&gt;Evaluador&lt;/b&gt;"]
+  subgraph svc["Agent Service [Contenedor: Go]"]
+    direction TB
+    api["&lt;b&gt;HTTP API&lt;/b&gt;&lt;br/&gt;[net/http]&lt;br/&gt;Auth Bearer, /health, /tasks;&lt;br/&gt;responde en &lt; 2 s"]
+    tm["&lt;b&gt;Task Manager&lt;/b&gt;&lt;br/&gt;[goroutines]&lt;br/&gt;Estado en memoria, 1 tarea por escritorio,&lt;br/&gt;deadline 270 s, cancelación dura"]
+    loop["&lt;b&gt;Agent Loop&lt;/b&gt;&lt;br/&gt;Clasificar intención → orientar →&lt;br/&gt;localizar → actuar → verificar → reportar"]
+    guard["&lt;b&gt;Guardrails&lt;/b&gt;&lt;br/&gt;Ambigüedad, acciones masivas o peligrosas,&lt;br/&gt;anti-duplicado, verificación final"]
+    llmc["&lt;b&gt;LLM Client&lt;/b&gt;&lt;br/&gt;[OpenRouter]&lt;br/&gt;Roles actor / verificador,&lt;br/&gt;conteo de tokens y costo"]
+    perc["&lt;b&gt;Perception&lt;/b&gt;&lt;br/&gt;Captura, detector de pantalla estable,&lt;br/&gt;zoom de región, extracción estructurada"]
+    act["&lt;b&gt;Action Executor&lt;/b&gt;&lt;br/&gt;click 150 ms, hover, select-all + type,&lt;br/&gt;teclas, scroll; espera a estabilizar"]
+    rfb["&lt;b&gt;RFB Driver&lt;/b&gt;&lt;br/&gt;[Go, detrás de interfaz Driver]&lt;br/&gt;WSS, auth VNC (DES), Raw/CopyRect,&lt;br/&gt;PointerEvent, KeyEvent"]
+    sum["&lt;b&gt;Summary Formatter&lt;/b&gt;&lt;br/&gt;Línea 'respuesta:', razones con IDs,&lt;br/&gt;redacción de secretos"]
+    conf["&lt;b&gt;Config Resolver&lt;/b&gt;&lt;br/&gt;Merge de capas, validación estricta,&lt;br/&gt;selección por URL y por pantalla"]
+    tr["&lt;b&gt;Trace Recorder&lt;/b&gt;"]
+  end
+  desk["&lt;b&gt;Escritorio remoto&lt;/b&gt;&lt;br/&gt;[RFB/WSS]"]
+  llm["&lt;b&gt;OpenRouter&lt;/b&gt;"]
+
+  eval --&gt; api --&gt; tm --&gt; loop
+  loop --&gt; guard
+  loop --&gt; llmc --&gt; llm
+  loop --&gt; perc --&gt; rfb
+  loop --&gt; act --&gt; rfb
+  rfb --&gt; desk
+  loop --&gt; sum --&gt; tm
+  conf -.-&gt; loop
+  conf -.-&gt; act
+  conf -.-&gt; sum
+  loop --&gt; tr
+
+  classDef comp fill:#85bbf0,color:#000,stroke:#5d82a8
+  classDef ext fill:#999,color:#fff,stroke:#6b6b6b
+  classDef person fill:#08427b,color:#fff,stroke:#052e56
+  class api,tm,loop,guard,llmc,perc,act,rfb,sum,conf,tr comp
+  class desk,llm ext
+  class eval person
+  style svc fill:none,stroke:#2e6295,stroke-dasharray: 5 5</pre></div>
+<h3>Dinámico · Ciclo de vida de una tarea</h3>
+<div class="diagram"><pre class="mermaid">sequenceDiagram
+  autonumber
+  participant E as Evaluador
+  participant A as HTTP API
+  participant T as Task Manager
+  participant L as Agent Loop
+  participant G as Guardrails
+  participant M as LLM (OpenRouter)
+  participant D as Escritorio (RFB)
+  E-&gt;&gt;A: POST /tasks {tarea, escritorio}
+  A-&gt;&gt;T: encolar (deadline 270 s)
+  A--&gt;&gt;E: {task_id} (&lt; 2 s)
+  T-&gt;&gt;L: iniciar
+  L-&gt;&gt;D: conectar, autenticar, captura inicial
+  L-&gt;&gt;M: clasificar intención + leer "Hoy" de la app
+  loop hasta terminar, fallar o vencer el deadline
+    L-&gt;&gt;M: captura + historial comprimido → acción
+    L-&gt;&gt;G: ¿acción permitida? (masiva, ambigua, duplicado)
+    G--&gt;&gt;L: sí / no + razón
+    L-&gt;&gt;D: acción (click 150 ms, type con select-all)
+    L-&gt;&gt;D: esperar pantalla estable → nueva captura
+  end
+  L-&gt;&gt;M: verificación final (releer registro / bitácora)
+  L-&gt;&gt;T: estado + resumen redactado
+  T-&gt;&gt;D: desconectar (no más input)
+  E-&gt;&gt;A: GET /tasks/{id} cada 5 s
+  A--&gt;&gt;E: {estado, resumen}</pre></div>
+</section>
+
+<section id="loop">
+<h2><span class="n">07</span>El loop del agente</h2>
+<p>Cada tarea pasa por fases fijas. Las fases son código; dentro de cada una, el modelo decide la siguiente acción mirando la captura actual.</p>
+<div class="grid2">
+  <div><h3>1 · Clasificar</h3><p>Intención: <code>crear</code>, <code>editar</code>, <code>consultar</code>, <code>exportar</code> o <code>rechazar</code> (imposible o peligrosa). Extrae entidades y valores de la orden. Fija el checklist de la fase de verificación.</p></div>
+  <div><h3>2 · Orientar</h3><p>Captura inicial, lectura de “hoy”, de los menús y del título de la app. Si la app coincide con un perfil conocido, carga sus pistas; si no, sigue sin ellas.</p></div>
+  <div><h3>3 · Localizar</h3><p>Navega hasta la lista correcta, filtra y extrae candidatos como JSON. El código decide: 0 → no existe; 1 → seguir; más de 1 → <code>fallida</code> con identificadores.</p></div>
+  <div><h3>4 · Actuar</h3><p>Edita solo los campos pedidos. Los clics que persisten (Guardar, Exportar, Eliminar) usan una acción distinta, <code>commit</code>, que pasa por los guardrails.</p></div>
+  <div><h3>5 · Verificar</h3><p>Reabre el registro o la lista y compara contra lo pedido. Si la app tiene bitácora, la consulta. El resultado de esta fase decide el estado.</p></div>
+  <div><h3>6 · Reportar</h3><p>Arma el resumen con plantilla, redacta secretos, publica el estado y corta la sesión VNC. No hay más input después de este punto.</p></div>
+</div>
+<h3>Acciones disponibles para el modelo</h3>
+<div class="scroll"><table>
+<tr><th>Acción</th><th>Qué hace el executor</th></tr>
+<tr><td><code>click(x,y)</code> · <code>double_click</code></td><td>Mueve, presiona 150 ms, suelta, espera estabilidad</td></tr>
+<tr><td><code>hover(x,y)</code></td><td>Mueve y permanece para abrir submenús</td></tr>
+<tr><td><code>type(text, replace=true)</code></td><td><code>ctrl+a</code> y luego escribe con retardo por carácter</td></tr>
+<tr><td><code>key(combo)</code> · <code>scroll(x,y,dir,n)</code></td><td>Teclas especiales; rueda del mouse</td></tr>
+<tr><td><code>zoom(región)</code></td><td>Recorte ampliado para leer texto chico o precisar coordenadas</td></tr>
+<tr><td><code>extract(descripción)</code></td><td>Pide al modelo las filas visibles como JSON; el código las acumula entre páginas</td></tr>
+<tr><td><code>commit(x,y, qué)</code></td><td>Clic que persiste; requiere objetivo único confirmado y que no se haya hecho antes el mismo commit</td></tr>
+<tr><td><code>finish(estado, datos, razón)</code></td><td>Solicita cerrar; el código verifica antes de aceptar <code>terminada</code></td></tr>
+</table></div>
+<h3>Contexto por paso (control de costo)</h3>
+<p>Orden y plan, fecha de la app, notas acumuladas, historial de acciones <b>solo en texto</b> con su resultado, y <b>una</b> captura: la actual. Las capturas anteriores no se reenvían. Un zoom como máximo por paso.</p>
+</section>
+
+<section id="guardrails">
+<h2><span class="n">08</span>Guardrails</h2>
+<p>El prompt pide prudencia; el código la impone. Estas reglas no dependen del modelo:</p>
+<div class="scroll"><table>
+<tr><th>Regla</th><th>Disparador</th><th>Efecto</th></tr>
+<tr><td>Unicidad</td><td>Localizar devuelve más de un candidato para una escritura</td><td><code>fallida</code>; la razón lista los identificadores de cada candidato</td></tr>
+<tr><td>Anti-duplicado</td><td>Intención <code>crear</code></td><td>Buscar por identificador antes; si ya existe, <code>fallida</code> con su código</td></tr>
+<tr><td>Commit único</td><td>Segundo <code>commit</code> sobre el mismo objetivo</td><td>Bloqueado hasta verificar el efecto del primero</td></tr>
+<tr><td>Cambios masivos</td><td>Orden con alcance plural sobre escrituras (“todos”, “eliminar los…”)</td><td><code>fallida</code> sin actuar</td></tr>
+<tr><td>Datos desconocidos</td><td>Valor requerido que la orden no da</td><td><code>fallida</code> sin inventar</td></tr>
+<tr><td>Deadline</td><td>270 s desde el inicio</td><td>Reporta con lo verificado; si no verificó, <code>fallida</code>; corta input</td></tr>
+<tr><td>Secretos</td><td>Siempre, al final</td><td>Elimina la clave recibida, tokens propios y valores junto a etiquetas sensibles</td></tr>
+<tr><td>Presupuesto</td><td>Pasos o costo por encima del techo configurado</td><td>Igual que deadline</td></tr>
+</table></div>
+</section>
+
+<section id="config">
+<h2><span class="n">09</span>Configuración declarativa</h2>
+<p>El cambio de requisitos llega a las 15:30. Lo que podemos anticipar que cambia vive en YAML por capas, validado con JSON Schema estricto (una clave desconocida es error):</p>
+<div class="scroll"><table>
+<tr><th>Capa</th><th>Contenido</th><th>Ejemplos</th></tr>
+<tr><td><code>base.yaml</code></td><td>Contrato, formato del resumen, presupuestos, modelos, políticas</td><td>Nombres de campos, valores de <code>estado</code>, prefijo <code>respuesta: </code>, deadline</td></tr>
+<tr><td><code>surfaces/*.yaml</code></td><td>Transporte y mecánica de interacción</td><td>Resolución, ms de clic, estrategia para reemplazar texto, umbral de estabilidad</td></tr>
+<tr><td><code>apps/*.yaml</code></td><td>Pistas opcionales de una app conocida</td><td>Entidades, identificadores, rutas de menú, quirks</td></tr>
+<tr><td>overlay por entorno</td><td>Ajustes de despliegue sin tocar el repo</td><td>Cambiar de modelo en caliente</td></tr>
+</table></div>
+<p>Orden de merge por tarea: base ← superficie (elegida por la URL del escritorio) ← app (elegida por texto visible en la primera captura) ← overlay. El perfil de app tiene el mismo formato que el agente usaría para registrar lo que aprende, así que uno escrito a mano y uno aprendido son intercambiables. Solo dos cambios requieren código: un protocolo distinto de RFB (driver nuevo detrás de la interfaz) y un contrato con semántica nueva.</p>
+</section>
+
+<section id="decisiones">
+<h2><span class="n">10</span>Decisiones y trade-offs</h2>
+<div class="scroll"><table>
+<tr><th>Decisión</th><th>Elegida</th><th>Descartada y por qué</th></tr>
+<tr><td>Lenguaje</td><td>Go: concurrencia simple, binario único, arranque rápido</td><td>Python: más librerías de visión, pero no las necesitamos y despliega más pesado</td></tr>
+<tr><td>Acceso a la pantalla</td><td>Driver RFB directo sobre WSS (auth VNC, Raw/CopyRect, eventos de puntero y teclado) detrás de una interfaz. Librería de terceros si cubre WSS y auth VNC tras un spike corto; si no, implementación propia del subconjunto mínimo</td><td>Navegador headless sobre noVNC: más latencia y más piezas que fallen</td></tr>
+<tr><td>Percepción</td><td>Captura nativa + modelo multimodal + zoom de región</td><td>Set-of-marks u OCR propio: sin DOM no hay marcas confiables y no cabe en un día</td></tr>
+<tr><td>Espera tras actuar</td><td>Detector de estabilidad por diff de framebuffer</td><td><code>sleep</code> fijo: lento en el caso bueno y falla en el malo</td></tr>
+<tr><td>Conteos y respuestas</td><td>El modelo extrae filas; el código filtra, cuenta y formatea</td><td>El modelo cuenta: alucina entre páginas</td></tr>
+<tr><td>Seguridad</td><td>Guardrails en código + acción <code>commit</code> separada</td><td>Solo prompt: un falso éxito o duplicado anula la tarea</td></tr>
+<tr><td>Estado final</td><td>Decide la verificación</td><td>Decide el modelo: tiende a declarar éxito</td></tr>
+<tr><td>Historial</td><td>Texto + una captura por paso</td><td>Todas las capturas: mejor contexto, pero 5 a 10 veces más caro</td></tr>
+<tr><td>Modelos</td><td>Elección con datos: 2–3 candidatos de OpenRouter en el harness, gana el más barato que cumple las metas. Dos roles separables: <code>actor</code> (decide la acción; candidatos <code>openai/gpt-4o-mini</code> y <code>anthropic/claude-haiku-5.5</code>, US$ 0,15/0,60 y 0,10/0,50 por millón) y <code>grounder</code> (ubica coordenadas; candidato UI-TARS 1.5 7B, US$ 0,10/0,20 por millón de tokens)</td><td>El más potente a priori: rompe el presupuesto</td></tr>
+<tr><td>Deadline</td><td>Reportar a los 270 s y cortar</td><td>Usar los 300 s: lo tardío cae en la tarea siguiente</td></tr>
+<tr><td>Estado de tareas</td><td>En memoria, un worker por escritorio</td><td>Cola o base externa: no aporta a esta escala y agrega fallas</td></tr>
+<tr><td>Despliegue</td><td>Contenedor en Railway (donde ya corren los escritorios)</td><td>Serverless: corta procesos largos de 5 min</td></tr>
+</table></div>
+</section>
+
+<section id="medicion">
+<h2><span class="n">11</span>Plan de medición</h2>
+<p>El harness se construye antes que el loop. Por cada caso: <code>/__reset</code> → <code>POST /tasks</code> → polling cada 5 s → <code>/__check</code> → puntuación local del estado, la línea <code>respuesta:</code>, las <code>claves_razon</code> y la ausencia de secretos. Cada corrida guarda trazas (captura, acción, tokens y costo por paso).</p>
+<h3>Corpus</h3>
+<div class="scroll"><table>
+<tr><th>Categoría</th><th>Casos</th><th>Ejemplo</th></tr>
+<tr><td>Oficiales</td><td class="num">5</td><td>E1–E5 del material</td></tr>
+<tr><td>Crear</td><td class="num">4</td><td>Cliente nuevo; cliente con NIT ya existente (debe fallar)</td></tr>
+<tr><td>Editar</td><td class="num">5</td><td>Nombre con tilde; homónimo resoluble por ciudad; homónimo no resoluble</td></tr>
+<tr><td>Consultar</td><td class="num">8</td><td>Conteo multipágina; dos datos con <code>;</code>; fecha relativa (“ayer”); pregunta sin respuesta</td></tr>
+<tr><td>Exportar</td><td class="num">4</td><td>Filtro de estado y rango de fechas; rango relativo</td></tr>
+<tr><td>Rechazar</td><td class="num">5</td><td>Borrado masivo; pedido de la clave de integración; campo inexistente</td></tr>
+<tr><td>Robustez</td><td class="num">4</td><td>Órdenes con errores de tipeo; orden en inglés; valores con formato distinto</td></tr>
+</table></div>
+<h3>Métricas y metas</h3>
+<p>El agente no es determinista: cada caso se corre 3 veces para validar; durante el desarrollo, una.</p>
+<div class="scroll"><table>
+<tr><th>Métrica</th><th>Meta</th><th>Por qué</th></tr>
+<tr><td>Acierto en oficiales</td><td class="num">5/5 en 3 corridas</td><td>Casos conocidos: fallar uno es un bug</td></tr>
+<tr><td>Acierto en propios, sin perfil de app</td><td class="num">≥ 90 %</td><td>Un 100 % sostenido indica un corpus fácil: se endurece</td></tr>
+<tr><td>Falsos éxitos</td><td class="num">0</td><td>El error más caro de la rúbrica</td></tr>
+<tr><td>Acciones fuera de la tarea · duplicados · secretos filtrados</td><td class="num">0</td><td>Cada uno anula la tarea</td></tr>
+<tr><td>Tiempo p95</td><td class="num">&lt; 240 s</td><td>Margen sobre el corte de 300 s</td></tr>
+<tr><td>Costo medio por tarea</td><td class="num">≤ US$ 0,04</td><td>100+ casos con la reserva de US$ 5</td></tr>
+<tr><td>Latencia de <code>POST /tasks</code></td><td class="num">&lt; 300 ms</td><td>El contrato exige &lt; 2 s</td></tr>
+<tr><td>Brecha con y sin perfil de app</td><td class="num">se reporta</td><td>Estima cuánto perdemos en una app no vista</td></tr>
+<tr><td>Precisión de la intención clasificada</td><td class="num">100 % en oficiales</td><td>Una intención mal clasificada arrastra toda la tarea</td></tr>
+</table></div>
+<p class="note">Presupuesto de medición: una ronda completa (~35 casos × 3 corridas × US$ 0,04) cuesta cerca de US$ 4. Con US$ 45 alcanzan unas 10 rondas en el día.</p>
+</section>
+
+<section id="riesgos">
+<h2><span class="n">12</span>Riesgos</h2>
+<div class="scroll"><table>
+<tr><th>Riesgo</th><th>Impacto</th><th>Mitigación</th></tr>
+<tr><td>El modelo barato no ubica bien las coordenadas</td><td>Clics errados, tareas lentas</td><td>Zoom de región; comparar 2–3 modelos en el harness; rol <code>grounder</code> con un modelo especializado en interfaces (UI-TARS, permitido)</td></tr>
+<tr><td>Costo por tarea por encima del techo</td><td>Se agota la reserva en la evaluación</td><td>Una captura por paso, JPEG, techo de pasos y costo configurable</td></tr>
+<tr><td>El cambio de las 15:30 toca algo que no es configurable</td><td>Reescritura bajo presión</td><td>Driver y contrato detrás de interfaces; desplegado y medido antes de las 15:30</td></tr>
+<tr><td>La app de evaluación tiene una trampa que no vimos</td><td>Fallas sistemáticas</td><td>Guardrails genéricos; ante duda, <code>fallida</code> honesta</td></tr>
+<tr><td>Caída del despliegue durante el demo day</td><td>Cero en ejecución</td><td><code>/health</code> monitoreado; reinicio automático; sin estado que perder</td></tr>
+</table></div>
+</section>
+
+<section id="plan">
+<h2><span class="n">13</span>Plan de ejecución</h2>
+<div class="scroll"><table>
+<tr><th>Bogotá</th><th>Entregable verificable</th></tr>
+<tr><td class="num">12:00–13:00</td><td>Cliente RFB: conecta, autentica, captura y hace clic en un escritorio real</td></tr>
+<tr><td class="num">13:00–14:00</td><td>API con el contrato desplegada; <code>/health</code> responde detrás del token; harness corriendo E1–E5</td></tr>
+<tr><td class="num">14:00–15:30</td><td>Loop + guardrails; primera métrica real sobre oficiales</td></tr>
+<tr><td class="num">15:30–18:30</td><td>Absorber el cambio; corpus propio; elección de modelo por datos</td></tr>
+<tr><td class="num">18:30–19:30</td><td>Congelar código, video de 2 min, README del repo</td></tr>
+<tr><td class="num">19:30–20:00</td><td>Verificar el entrypoint desde fuera y entregar</td></tr>
+</table></div>
+</section>
+
+<footer>Screen Operator · diseño v1 · Reto 1, Frontier BOG/26. Las afirmaciones marcadas como inferidas se validan durante la ejecución.</footer>
+</div>
