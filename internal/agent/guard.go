@@ -10,6 +10,14 @@ type Decision struct {
 	Deny        bool
 	Reason      string
 	Identifiers []string // identificadores que explican el rechazo (van al resumen)
+	// Fail (con Deny) termina la tarea "fallida" con Reason e Identifiers en
+	// vez de devolverle la razon al modelo (epica 7: unicidad, duplicado).
+	Fail bool
+	// Commit (sin Deny) indica que la accion, aunque el modelo la pidio como
+	// click, persiste (su etiqueta es Guardar, Exportar...): el loop la
+	// registra como commit sobre Target.
+	Commit bool
+	Target string
 }
 
 // Allow deja seguir.
@@ -18,6 +26,11 @@ var Allow = Decision{}
 // Deny rechaza con una razon.
 func Deny(format string, a ...any) Decision {
 	return Decision{Deny: true, Reason: fmt.Sprintf(format, a...)}
+}
+
+// Fail termina la tarea fallida con una razon y los identificadores.
+func Fail(ids []string, format string, a ...any) Decision {
+	return Decision{Deny: true, Fail: true, Reason: fmt.Sprintf(format, a...), Identifiers: ids}
 }
 
 // Guard es el punto de enganche de los guardrails en codigo (epica 7). El

@@ -158,6 +158,10 @@ func (a *Agent) init() {
 	if a.Log == nil {
 		a.Log = slog.New(slog.NewJSONHandler(io.Discard, nil))
 	}
+	if r, ok := a.Guard.(SecretRedactor); ok {
+		// Epica 7.5: los logs del agente pasan por el redactor del guardrail.
+		a.Log = slog.New(&redactHandler{next: a.Log.Handler(), r: r})
+	}
 	if a.Now == nil {
 		a.Now = time.Now
 	}
@@ -292,6 +296,14 @@ func (a *Agent) loop(ctx context.Context) Outcome {
 				a.record(fmt.Sprintf("%d. [%s] %s — la extraccion fallo: %s", st.Steps, st.Phase, act, errText(err)))
 			}
 		case KindFinish:
+			if fr, ok := a.Guard.(FinishReviewer); ok && act.Finish != nil {
+				// Epica 7: el guardrail puede pedir otro intento antes de cerrar.
+				if h := fr.ReviewFinish(st, act.Finish); h != "" {
+					a.record(fmt.Sprintf("%d. [%s] %s — no aceptado por guardrail: %s", st.Steps, st.Phase, act, h))
+					hint = h
+					continue
+				}
+			}
 			out, done, h := a.doFinish(ctx, act, phaseBefore, &finishRejects)
 			if done {
 				return out
@@ -299,6 +311,10 @@ func (a *Agent) loop(ctx context.Context) Outcome {
 			hint = h
 		default:
 			if err := a.doScreenAction(ctx, act); err != nil {
+				var gf *GuardFailure
+				if errors.As(err, &gf) {
+					return a.fail(ctx, gf.Decision.Reason, gf.Decision.Identifiers)
+				}
 				if ctx.Err() != nil {
 					return a.fail(ctx, ReasonTimeout, nil)
 				}
@@ -627,6 +643,9 @@ func (a *Agent) doExtract(ctx context.Context, act Action) error {
 		st.Extract = NewAggregator(act.What, act.KeyCol, act.Purpose, act.Filters)
 	}
 	added, stop := st.Extract.AddPage(page)
+	if o, ok := a.Guard.(PageObserver); ok {
+		o.ObservePage(st, act, page) // epica 7: relectura para unicidad y verificacion
+	}
 	msgStop := "hay pagina siguiente: avanza y vuelve a extraer"
 	if page.HasNextXY && page.NextEnabled {
 		if page.NextX >= 0 && page.NextY >= 0 && page.NextX < full.Img.Bounds().Dx() && page.NextY < full.Img.Bounds().Dy() {
@@ -645,9 +664,20 @@ func (a *Agent) doExtract(ctx context.Context, act Action) error {
 // doScreenAction ejecuta una accion que envia eventos, previo guardrail.
 func (a *Agent) doScreenAction(ctx context.Context, act Action) error {
 	st := a.st
-	if d := a.Guard.BeforeAction(st, act); d.Deny {
+	if lw, ok := a.Guard.(LabelWanter); ok && act.Kind == KindClick && lw.WantLabel(st, act) {
+		// Epica 7.3-S4: un click sobre Guardar/Exportar/Eliminar es un commit.
+		act.Label, _ = a.readLabel(ctx, act.X, act.Y)
+	}
+	d := a.Guard.BeforeAction(st, act)
+	if d.Deny {
 		a.record(fmt.Sprintf("%d. [%s] %s — BLOQUEADO por guardrail: %s", st.Steps, st.Phase, act, d.Reason))
+		if d.Fail {
+			return &GuardFailure{Decision: d}
+		}
 		return nil
+	}
+	if d.Commit && act.Kind == KindClick {
+		act.Kind, act.Target, act.What = KindCommit, d.Target, firstNonEmpty(act.Label, act.Reason)
 	}
 	var out screen.Outcome
 	var err error
@@ -709,13 +739,24 @@ func (a *Agent) doScreenAction(ctx context.Context, act Action) error {
 		// pero no avanza.
 		result += fmt.Sprintf("; REPETISTE ESTA ACCION %d VECES SIN AVANZAR: un clic sobre un menu abierto lo cierra; usa hover sobre la opcion o el submenu, pide zoom o prueba otro camino", n)
 	}
-	a.record(fmt.Sprintf("%d. [%s] %s%s → %s", st.Steps, st.Phase, act, reason, result))
 	if out.Stable && out.Screen != nil {
 		a.setFull(out.Screen)
 		a.stable = true
 	} else {
 		a.view = nil // carryover epica 2: recapturar antes de decidir
 	}
+	if co, ok := a.Guard.(CommitObserver); ok && act.Kind == KindCommit {
+		// Epica 7.4: un commit puede quedar pendiente de un dialogo de confirmacion.
+		if a.view == nil {
+			_, _ = a.stableCapture(ctx)
+		}
+		dc := a.checkDialog(ctx)
+		co.AfterCommit(st, act, dc)
+		if dc.Pending {
+			result += "; HAY UN DIALOGO DE CONFIRMACION PENDIENTE (" + truncate(dc.Text, 100) + "): el cambio no se guardo todavia"
+		}
+	}
+	a.record(fmt.Sprintf("%d. [%s] %s%s → %s", st.Steps, st.Phase, act, reason, result))
 	return nil
 }
 
@@ -855,7 +896,7 @@ func (a *Agent) final(_ context.Context, done bool, reason string, ids []string,
 	if done && st.Class.Question && st.Extract != nil && st.Extract.Pages() > 0 {
 		r.Notes = append(r.Notes, fmt.Sprintf("Conteo en código sobre %d páginas extraídas (%d filas únicas).", st.Extract.Pages(), len(st.Extract.Rows())))
 	}
-	s := a.Cfg.Summary.Build(r)
+	s := a.redact(a.Cfg.Summary.Build(r)) // epica 7.5: ultimo paso antes de publicar
 	status := StatusFailed
 	if done {
 		status = StatusDone
@@ -868,12 +909,14 @@ func (a *Agent) final(_ context.Context, done bool, reason string, ids []string,
 
 func (a *Agent) traceStep(s trace.Step, u llm.Usage, d time.Duration) {
 	s.TokensIn, s.TokensOut, s.CostUSD, s.Duration = u.PromptTokens, u.CompletionTokens, u.CostUSD, d
+	s.Action, s.Reason = a.redact(s.Action), a.redact(s.Reason)
 	if a.Trace != nil {
 		_ = a.Trace.Step(s)
 	}
 }
 
 func (a *Agent) record(line string) {
+	line = a.redact(line)
 	a.st.History = append(a.st.History, line)
 	a.logInfo("paso", "historial", line)
 }

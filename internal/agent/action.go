@@ -136,6 +136,10 @@ type Action struct {
 	Target        string
 	ConfirmDialog bool // confirma el dialogo que abrio un commit anterior sobre el mismo objetivo
 
+	// Label es el texto del elemento bajo un click, leido con zoom antes de
+	// consultar al guardrail (epica 7.3-S4). "" = no se leyo.
+	Label string
+
 	// finish (solicitud: el estado final lo fija el loop tras verificar)
 	Finish *FinishRequest
 }

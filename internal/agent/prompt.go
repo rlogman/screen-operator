@@ -11,10 +11,14 @@ import (
 // registra en la traza de cada tarea.
 const PromptVersion = "v1"
 
-//go:embed prompts/v1.tmpl
+// GuardrailsVersion identifica el fragmento prompts/guardrails.tmpl (epica 7),
+// que se agrega al prompt de sistema sin editar v1.tmpl.
+const GuardrailsVersion = "g1"
+
+//go:embed prompts/v1.tmpl prompts/guardrails.tmpl
 var promptFS embed.FS
 
-var prompts = template.Must(template.New("v1.tmpl").Option("missingkey=error").ParseFS(promptFS, "prompts/v1.tmpl"))
+var prompts = template.Must(template.New("v1.tmpl").Option("missingkey=error").ParseFS(promptFS, "prompts/v1.tmpl", "prompts/guardrails.tmpl"))
 
 // render ejecuta una plantilla con nombre.
 func render(name string, data any) string {
@@ -28,7 +32,7 @@ func render(name string, data any) string {
 }
 
 // SystemPrompt es el prompt de sistema (generico, sin pistas de app).
-func SystemPrompt() string { return render("system", nil) }
+func SystemPrompt() string { return render("system", nil) + "\n\n" + render("guardrails", nil) }
 
 // ExtractSystemPrompt es el prompt de sistema del lector de tablas.
 func ExtractSystemPrompt() string { return render("system_extract", nil) }
