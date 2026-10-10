@@ -1,0 +1,14 @@
+{
+  "project_type": "prototype",
+  "quality_gates": {
+    "preflight": false,
+    "lint": true,
+    "test": false,
+    "review": false,
+    "security_scan": false,
+    "docs_check": false,
+    "api_compat": false,
+    "compound": false
+  },
+  "overrides": {}
+}
