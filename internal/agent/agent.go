@@ -99,6 +99,8 @@ type State struct {
 	// empezo la ultima fase de verificacion.
 	LastCommitStep int
 	VerifyFrom     int
+	// Escalated lista las decisiones escaladas ("paso:disparador", epica 8).
+	Escalated []string
 }
 
 func (st *State) enter(p Phase) {
@@ -111,12 +113,15 @@ func (st *State) enter(p Phase) {
 
 // Config es la parte de la configuracion que usa el loop.
 type Config struct {
-	Actor      llm.Role
-	Extractor  llm.Role
-	MaxSteps   int
-	Perception screen.Perception
-	Summary    summary.Format
-	TodayFrom  string // policy.today_source: app o server
+	Actor     llm.Role
+	Extractor llm.Role
+	// Escalation decide los pasos trabados (Model "" = sin escalamiento).
+	Escalation       llm.Role
+	EscalationPolicy llm.Escalation
+	MaxSteps         int
+	Perception       screen.Perception
+	Summary          summary.Format
+	TodayFrom        string // policy.today_source: app o server
 }
 
 // Outcome es el resultado de una tarea.
@@ -159,6 +164,7 @@ type Agent struct {
 	hasNextXY    bool
 	deadline     time.Time
 	parseErrs    int
+	esc          escalator
 }
 
 func (a *Agent) init() {
@@ -460,7 +466,7 @@ func (a *Agent) decide(ctx context.Context, hint string) (Action, llm.Usage, err
 		return Action{}, llm.Usage{}, err
 	}
 	var act Action
-	u, err := a.ask(ctx, "actuar", a.Cfg.Actor, msg, shot, func(s string) error {
+	u, err := a.ask(ctx, "actuar", a.actorRole(), msg, shot, func(s string) error {
 		var perr error
 		act, perr = Parse(s, v)
 		return perr
@@ -717,6 +723,7 @@ func (a *Agent) doScreenAction(ctx context.Context, act Action) error {
 	}
 	if !out.Changed && act.String() == a.lastNoEffect {
 		result += "; ES LA SEGUNDA VEZ SIN EFECTO: no repitas este punto; pide zoom para ubicar el elemento o prueba otro camino"
+		a.escSignal(llm.TriggerNoEffect)
 	}
 	if out.Changed {
 		a.lastNoEffect = ""
@@ -738,6 +745,7 @@ func (a *Agent) doScreenAction(ctx context.Context, act Action) error {
 		// Un clic que abre y cierra lo mismo (p. ej. un menu) cambia la pantalla
 		// pero no avanza.
 		result += fmt.Sprintf("; REPETISTE ESTA ACCION %d VECES SIN AVANZAR: un clic sobre un menu abierto lo cierra; usa hover sobre la opcion o el submenu, pide zoom o prueba otro camino", n)
+		a.escSignal(llm.TriggerNoEffect)
 	}
 	a.record(fmt.Sprintf("%d. [%s] %s%s → %s", st.Steps, st.Phase, act, reason, result))
 	if out.Stable && out.Screen != nil {
@@ -842,6 +850,7 @@ func (a *Agent) isPageAdvance(act Action) bool {
 
 func (a *Agent) rejectFinish(rejects *int, act Action, why string) string {
 	*rejects++
+	a.escSignal(llm.TriggerFinishRejected)
 	a.record(fmt.Sprintf("%d. [%s] %s — no aceptado: %s", a.st.Steps, a.st.Phase, act, why))
 	return why
 }
@@ -930,12 +939,13 @@ func (a *Agent) final(_ context.Context, done bool, reason string, ids []string,
 	}
 	a.traceStep(trace.Step{Phase: string(PhaseReport), Action: "reportar " + status, Reason: reason}, llm.Usage{}, 0)
 	a.Log.Info("tarea terminada por el agente", "fase", string(PhaseReport), "estado", status, "pasos", st.Steps,
-		"fases", fmt.Sprint(st.Phases))
+		"fases", fmt.Sprint(st.Phases), "escalados", fmt.Sprint(st.Escalated))
 	return Outcome{Done: done, Summary: s, Report: r, State: st}
 }
 
 func (a *Agent) traceStep(s trace.Step, u llm.Usage, d time.Duration) {
 	s.TokensIn, s.TokensOut, s.CostUSD, s.Duration = u.PromptTokens, u.CompletionTokens, u.CostUSD, d
+	a.esc.spent += u.CostUSD
 	if a.Trace != nil {
 		_ = a.Trace.Step(s)
 	}

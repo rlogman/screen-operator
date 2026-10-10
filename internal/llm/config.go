@@ -26,6 +26,34 @@ type Models struct {
 	CallTimeoutS int             `json:"call_timeout_s"`
 	MaxRetries   *int            `json:"max_retries"`
 	Roles        map[string]Role `json:"roles"`
+	Escalation   Escalation      `json:"escalation"`
+}
+
+// Escalation es models.escalation: cuando el loop se traba, la siguiente
+// decision la toma models.roles.escalation. Sin ese rol no se escala nunca.
+type Escalation struct {
+	// Triggers: sin_efecto (accion repetida sin efecto o repetida sin avanzar),
+	// cierre_rechazado y sin_avance (StallSteps pasos sin cambiar de fase).
+	Triggers []string `json:"triggers"`
+	// StallSteps es N para sin_avance.
+	StallSteps int `json:"stall_steps"`
+	// MaxSteps es el maximo de decisiones escaladas por tarea.
+	MaxSteps int `json:"max_steps"`
+	// MaxTaskCostUSD: no se escala si la tarea ya gasto esto (0 = sin tope).
+	MaxTaskCostUSD float64 `json:"max_task_cost_usd"`
+}
+
+// Disparadores de escalamiento.
+const (
+	TriggerNoEffect       = "sin_efecto"
+	TriggerFinishRejected = "cierre_rechazado"
+	TriggerStall          = "sin_avance"
+)
+
+// EscalationRole devuelve models.roles.escalation y si esta configurado.
+func (m Models) EscalationRole() (Role, bool) {
+	r, ok := m.Roles["escalation"]
+	return r, ok && strings.TrimSpace(r.Model) != ""
 }
 
 // ModelsFromConfig lee models.*.

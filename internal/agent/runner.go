@@ -81,19 +81,23 @@ func (r *Runner) Run(ctx context.Context, job *tasks.Job) tasks.Result {
 		Log:    job.Log,
 		Now:    r.Now,
 		Cfg: Config{
-			Actor:      models.Role("actor"),
-			Extractor:  models.Role("verifier"),
-			MaxSteps:   b.MaxSteps,
-			Perception: ds.Perception(),
-			Summary:    sumFmt,
-			TodayFrom:  todaySrc,
+			Actor:            models.Role("actor"),
+			Extractor:        models.Role("verifier"),
+			EscalationPolicy: models.Escalation,
+			MaxSteps:         b.MaxSteps,
+			Perception:       ds.Perception(),
+			Summary:          sumFmt,
+			TodayFrom:        todaySrc,
 		},
 		AppHints: r.appHints,
+	}
+	if r, ok := models.EscalationRole(); ok {
+		a.Cfg.Escalation = r
 	}
 	if job.Trace != nil {
 		a.Trace = job.Trace
 	}
-	job.Log.Info("agente iniciado", "fase", "agente", "prompt", PromptVersion, "modelo", a.Cfg.Actor.Model,
+	job.Log.Info("agente iniciado", "fase", "agente", "prompt", PromptVersion, "modelo", a.Cfg.Actor.Model, "escalamiento", a.Cfg.Escalation.Model,
 		"max_pasos", b.MaxSteps, "max_costo_usd", b.MaxCost)
 	out := a.Run(ctx, job.Request.Instruction)
 	in, outTok, cost, calls := meter.Totals()
