@@ -110,10 +110,14 @@ func (r *Runner) Run(ctx context.Context, job *tasks.Job) tasks.Result {
 	if r, ok := models.EscalationRole(); ok {
 		a.Cfg.Escalation = r
 	}
+	if r, ok := models.GrounderRole(); ok {
+		a.Cfg.Grounder = r
+	}
 	if job.Trace != nil {
 		a.Trace = job.Trace
 	}
 	job.Log.Info("agente iniciado", "fase", "agente", "prompt", PromptVersion, "modelo", a.Cfg.Actor.Model, "escalamiento", a.Cfg.Escalation.Model,
+		"grounder", a.Cfg.Grounder.Model,
 		"max_pasos", b.MaxSteps, "max_costo_usd", b.MaxCost)
 	out := a.Run(ctx, job.Request.Instruction)
 	in, outTok, cost, calls := meter.Totals()

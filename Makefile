@@ -1,7 +1,7 @@
 # Gates locales de screen-operator. Los usan todos los loops (ver docs/requirements.json).
 GO ?= go
 
-.PHONY: build gate fmt-check vet test test-epic test-desktop clean
+.PHONY: build gate fmt-check vet test test-epic test-desktop test-live clean
 
 build:
 	mkdir -p bin
@@ -38,6 +38,15 @@ test-desktop:
 	@if [ -f "$(ENV_FILE)" ]; then set -a; . "$(ENV_FILE)"; set +a; echo "entorno cargado desde $(ENV_FILE)"; fi; \
 	echo "$(GO) test -tags desktop -p 1 ./... -run '$(DESKTOP_RUN)' $(DESKTOP_ARGS)"; \
 	$(GO) test -tags desktop -p 1 ./... -run '$(DESKTOP_RUN)' $(DESKTOP_ARGS)
+
+# test-live: escenarios con llamadas reales al modelo (build tag live). Carga
+# el entorno desde ENV_FILE sin imprimir sus valores. Cada corrida gasta.
+# Uso: make test-live LIVE_RUN=regex [ENV_FILE=ruta]
+LIVE_RUN ?= ^TestE8_1_S3_
+test-live:
+	@if [ -f "$(ENV_FILE)" ]; then set -a; . "$(ENV_FILE)"; set +a; echo "entorno cargado desde $(ENV_FILE)"; fi; \
+	echo "$(GO) test -tags live ./... -run '$(LIVE_RUN)' -count=1 -v"; \
+	$(GO) test -tags live ./... -run '$(LIVE_RUN)' -count=1 -v
 
 clean:
 	rm -rf bin

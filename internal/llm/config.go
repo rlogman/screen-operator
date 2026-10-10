@@ -56,6 +56,13 @@ func (m Models) EscalationRole() (Role, bool) {
 	return r, ok && strings.TrimSpace(r.Model) != ""
 }
 
+// GrounderRole devuelve models.roles.grounder y si esta configurado (historia
+// 8.1). Sin el rol, los clics usan las coordenadas del actor.
+func (m Models) GrounderRole() (Role, bool) {
+	r, ok := m.Roles["grounder"]
+	return r, ok && strings.TrimSpace(r.Model) != ""
+}
+
 // ModelsFromConfig lee models.*.
 func ModelsFromConfig(c *config.Config) (Models, error) {
 	var m Models
